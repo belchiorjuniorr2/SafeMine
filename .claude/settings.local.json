@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(/usr/local/bin/node -e \"console.log\\('node ok'\\)\")",
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/zehpc/.nvm/versions/**)",
+      "Bash(export PATH=\"$HOME/.volta/bin:$HOME/.nvm/versions/node/$\\(ls ~/.nvm/versions/node/)"
+    ]
+  }
+}
