@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import AudioRecorder from '../components/AudioRecorder'
+import FileAttach from '../components/FileAttach'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
@@ -9,59 +10,46 @@ const gravidades = ['Leve', 'Moderado', 'Grave']
 
 const field = (label, key, fields, set, opts = {}) => (
   <div key={key} style={{ marginBottom: '16px' }}>
-    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--gray)', letterSpacing: '0.4px', textTransform: 'uppercase', marginBottom: '6px' }}>
-      {label}
-    </label>
+    <label style={labelStyle}>{label}</label>
     {opts.textarea ? (
-      <textarea
-        value={fields[key] || ''}
-        onChange={e => set(p => ({ ...p, [key]: e.target.value }))}
-        rows={3}
-        style={inputStyle}
-        placeholder={opts.placeholder || ''}
-      />
+      <textarea value={fields[key] || ''} onChange={e => set(p => ({ ...p, [key]: e.target.value }))} rows={opts.rows || 3} style={inputStyle} placeholder={opts.placeholder || ''} />
     ) : (
-      <input
-        type={opts.type || 'text'}
-        value={fields[key] || ''}
-        onChange={e => set(p => ({ ...p, [key]: e.target.value }))}
-        style={inputStyle}
-        placeholder={opts.placeholder || ''}
-      />
+      <input type={opts.type || 'text'} value={fields[key] || ''} onChange={e => set(p => ({ ...p, [key]: e.target.value }))} style={inputStyle} placeholder={opts.placeholder || ''} />
     )}
   </div>
 )
-
-const inputStyle = {
-  width: '100%',
-  padding: '12px 14px',
-  borderRadius: '10px',
-  border: '1.5px solid var(--gray-mid)',
-  fontSize: '14px',
-  color: 'var(--text-dark)',
-  background: '#fff',
-  outline: 'none',
-  resize: 'vertical'
-}
 
 export default function SafetyReport() {
   const navigate = useNavigate()
   const today = new Date().toISOString().slice(0, 10)
   const now = new Date().toTimeString().slice(0, 5)
-
   const { user } = useAuth()
   const [f, setF] = useState({ data: today, hora: now })
+  const [files, setFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
-  const handleAI = (parsed) => {
-    if (!parsed._noKey && !parsed._error) setF(p => ({ ...p, ...parsed }))
+  const handleAI = (parsed, _t, sugs) => {
+    if (parsed._noKey || parsed._error) return
+    const update = { ...parsed }
+    if (sugs?.length) update.tratativas = sugs.map((s, i) => `${i + 1}. ${s}`).join('\n')
+    setF(p => ({ ...p, ...update }))
   }
 
   const handleSubmit = async () => {
     setSubmitting(true)
-    await supabase.from('registros').insert({ tipo: 'seguranca', dados: f, user_id: user.id, user_email: user.email })
+    let anexos = []
+    for (const file of files) {
+      const path = `${user.id}/${Date.now()}_${file.name}`
+      const { error } = await supabase.storage.from('relatos-anexos').upload(path, file)
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage.from('relatos-anexos').getPublicUrl(path)
+        anexos.push({ url: publicUrl, name: file.name, type: file.type })
+      }
+    }
+    const dados = { ...f, ...(anexos.length ? { anexos } : {}) }
+    await supabase.from('registros').insert({ tipo: 'seguranca', dados, user_id: user.id, user_email: user.email })
     setSubmitting(false)
-    navigate('/sucesso', { state: { type: 'seguranca', data: f } })
+    navigate('/sucesso', { state: { type: 'seguranca', data: dados } })
   }
 
   return (
@@ -74,7 +62,7 @@ export default function SafetyReport() {
           <AudioRecorder formType="seguranca" onResult={handleAI} />
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '16px' }}>
           <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--gray-light)' }}>
             Detalhes da Ocorrência
           </div>
@@ -95,6 +83,7 @@ export default function SafetyReport() {
           {field('Descrição da Ocorrência', 'descricao_ocorrencia', f, setF, { textarea: true, placeholder: 'Descreva o que aconteceu...' })}
           {field('Causa Raiz', 'causa_raiz', f, setF, { textarea: true, placeholder: 'Identifique a causa...' })}
           {field('Ação Imediata', 'acao_imediata', f, setF, { textarea: true, placeholder: 'Medidas tomadas imediatamente...' })}
+          {field('Tratativas Recomendadas', 'tratativas', f, setF, { textarea: true, rows: 5, placeholder: 'Sugestões da IA ou ações planejadas...' })}
 
           <div style={{ marginBottom: '16px' }}>
             <label style={labelStyle}>Gravidade</label>
@@ -103,17 +92,7 @@ export default function SafetyReport() {
                 <button
                   key={g}
                   onClick={() => setF(p => ({ ...p, gravidade: g }))}
-                  style={{
-                    flex: 1,
-                    padding: '10px 0',
-                    borderRadius: '10px',
-                    border: `2px solid ${f.gravidade === g ? gravColor(g) : 'var(--gray-mid)'}`,
-                    background: f.gravidade === g ? `${gravColor(g)}15` : '#fff',
-                    color: f.gravidade === g ? gravColor(g) : 'var(--gray)',
-                    fontWeight: 700,
-                    fontSize: '13px',
-                    transition: 'all 0.15s'
-                  }}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: '10px', border: `2px solid ${f.gravidade === g ? gravColor(g) : 'var(--gray-mid)'}`, background: f.gravidade === g ? `${gravColor(g)}15` : '#fff', color: f.gravidade === g ? gravColor(g) : 'var(--gray)', fontWeight: 700, fontSize: '13px', transition: 'all 0.15s' }}
                 >
                   {g}
                 </button>
@@ -122,11 +101,14 @@ export default function SafetyReport() {
           </div>
         </div>
 
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          style={{ ...submitStyle, background: submitting ? 'var(--gray)' : 'var(--orange)' }}
-        >
+        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '16px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--gray-light)' }}>
+            Anexos
+          </div>
+          <FileAttach files={files} onChange={setFiles} />
+        </div>
+
+        <button onClick={handleSubmit} disabled={submitting} style={{ ...submitStyle, background: submitting ? 'var(--gray)' : 'var(--orange)' }}>
           {submitting ? 'Enviando...' : 'Enviar Registro'}
         </button>
       </div>
@@ -135,5 +117,6 @@ export default function SafetyReport() {
 }
 
 const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--gray)', letterSpacing: '0.4px', textTransform: 'uppercase', marginBottom: '6px' }
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid var(--gray-mid)', fontSize: '14px', color: 'var(--text-dark)', background: '#fff', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }
 const submitStyle = { width: '100%', marginTop: '16px', padding: '16px', borderRadius: '14px', border: 'none', background: 'var(--orange)', color: '#fff', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 16px rgba(255,94,20,0.35)' }
 const gravColor = g => g === 'Grave' ? '#e53935' : g === 'Moderado' ? '#f57c00' : '#43a047'

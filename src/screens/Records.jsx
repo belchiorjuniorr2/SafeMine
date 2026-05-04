@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ChevronDown, ChevronUp, Trash2, X, AlertTriangle } from 'lucide-react'
+import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ChevronDown, ChevronUp, Trash2, X, AlertTriangle, Paperclip } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
 
@@ -31,6 +31,7 @@ const fieldLabels = {
   pneus: 'Pneus', freios: 'Freios', luzes: 'Luzes', buzina: 'Buzina',
   extintor: 'Extintor', triangulo: 'Triângulo', cinto: 'Cinto',
   retrovisores: 'Retrovisores', oleo: 'Óleo', agua: 'Água', combustivel: 'Combustível',
+  tratativas: 'Tratativas Recomendadas', anexos: 'Anexos',
 }
 
 const badgeKey = { seguranca: 'gravidade', ambiental: 'nivel_criticidade', ergonomia: 'prioridade' }
@@ -188,20 +189,54 @@ export default function Records() {
 
                 {isExpanded && (
                   <div style={{ borderTop: '1px solid var(--gray-light)' }}>
-                    <div style={{ padding: '12px 16px 4px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      {Object.entries(dados)
-                        .filter(([k, v]) => !k.startsWith('_') && v !== '' && v !== null && v !== undefined)
-                        .map(([k, v]) => (
-                          <div key={k} style={{ background: 'var(--gray-light)', borderRadius: '8px', padding: '8px 10px' }}>
-                            <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--gray)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>
-                              {fieldLabels[k] || k}
+                    <div style={{ padding: '12px 16px 4px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        {Object.entries(dados)
+                          .filter(([k, v]) => !k.startsWith('_') && k !== 'anexos' && k !== 'tratativas' && v !== '' && v !== null && v !== undefined)
+                          .map(([k, v]) => (
+                            <div key={k} style={{ background: 'var(--gray-light)', borderRadius: '8px', padding: '8px 10px' }}>
+                              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--gray)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>
+                                {fieldLabels[k] || k}
+                              </div>
+                              <div style={{ fontSize: '13px', color: 'var(--text-dark)', fontWeight: 500, wordBreak: 'break-word', lineHeight: 1.4 }}>
+                                {String(v)}
+                              </div>
                             </div>
-                            <div style={{ fontSize: '13px', color: 'var(--text-dark)', fontWeight: 500, wordBreak: 'break-word', lineHeight: 1.4 }}>
-                              {String(v)}
-                            </div>
+                          ))
+                        }
+                      </div>
+
+                      {/* Tratativas */}
+                      {dados.tratativas && (
+                        <div style={{ marginTop: '6px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '10px', padding: '10px 12px' }}>
+                          <div style={{ fontSize: '10px', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '6px' }}>Tratativas Recomendadas</div>
+                          <p style={{ fontSize: '13px', color: '#78350f', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-line' }}>{dados.tratativas}</p>
+                        </div>
+                      )}
+
+                      {/* Anexos */}
+                      {Array.isArray(dados.anexos) && dados.anexos.length > 0 && (
+                        <div style={{ marginTop: '6px', background: 'var(--gray-light)', borderRadius: '10px', padding: '10px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '8px' }}>
+                            <Paperclip size={12} color="var(--gray)" />
+                            <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--gray)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Anexos ({dados.anexos.length})</span>
                           </div>
-                        ))
-                      }
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {dados.anexos.map((a, i) => (
+                              a.type?.startsWith('image/') ? (
+                                <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: 'block', borderRadius: '8px', overflow: 'hidden', border: '1.5px solid var(--gray-mid)' }}>
+                                  <img src={a.url} alt={a.name} style={{ width: '72px', height: '72px', objectFit: 'cover', display: 'block' }} />
+                                </a>
+                              ) : (
+                                <a key={i} href={a.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 10px', borderRadius: '8px', border: '1.5px solid var(--gray-mid)', background: '#fff', fontSize: '12px', color: 'var(--text-mid)', fontWeight: 500, textDecoration: 'none' }}>
+                                  <Paperclip size={13} color="var(--gray)" />
+                                  {a.name.length > 20 ? a.name.slice(0, 18) + '…' : a.name}
+                                </a>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Delete section */}

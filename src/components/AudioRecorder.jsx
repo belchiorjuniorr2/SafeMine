@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Loader, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react'
+import { Mic, Loader } from 'lucide-react'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY || ''
 
@@ -63,8 +63,6 @@ export default function AudioRecorder({ formType, onResult }) {
   const [state, setState] = useState('idle') // idle | recording | processing | filled
   const [liveText, setLiveText] = useState('')
   const [seconds, setSeconds] = useState(0)
-  const [suggestions, setSuggestions] = useState([])
-  const [suggestionsOpen, setSuggestionsOpen] = useState(true)
   const recognitionRef = useRef(null)
   const timerRef = useRef(null)
   const transcriptRef = useRef('')
@@ -86,7 +84,6 @@ export default function AudioRecorder({ formType, onResult }) {
     transcriptRef.current = ''
     finalTextRef.current = ''
     setLiveText('')
-    setSuggestions([])
     isRecordingRef.current = true
 
     const rec = new SpeechRecognition()
@@ -135,11 +132,7 @@ export default function AudioRecorder({ formType, onResult }) {
     setState('processing')
     const text = transcriptRef.current.trim() || 'Sem transcrição'
     const { fields, suggestions: sugs } = await parseWithAI(text, formType)
-    onResult(fields, text)
-    if (sugs.length > 0) {
-      setSuggestions(sugs)
-      setSuggestionsOpen(true)
-    }
+    onResult(fields, text, sugs)
     const filled = !fields._noKey && !fields._error
     setState(filled ? 'filled' : 'idle')
     if (filled) setTimeout(() => setState('idle'), 3000)
@@ -277,35 +270,7 @@ export default function AudioRecorder({ formType, onResult }) {
         </div>
       </div>
 
-      {/* Suggestions */}
-      {suggestions.length > 0 && (
-        <div style={{ marginBottom: '16px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', overflow: 'hidden' }}>
-          <button
-            onClick={() => setSuggestionsOpen(o => !o)}
-            style={{ width: '100%', padding: '12px 14px', border: 'none', background: 'none', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
-          >
-            <Lightbulb size={16} color="#d97706" />
-            <span style={{ flex: 1, fontSize: '13px', fontWeight: 700, color: '#92400e' }}>
-              Sugestões de Tratativa ({suggestions.length})
-            </span>
-            {suggestionsOpen ? <ChevronUp size={16} color="#d97706" /> : <ChevronDown size={16} color="#d97706" />}
-          </button>
-          {suggestionsOpen && (
-            <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {suggestions.map((s, i) => (
-                <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
-                  <div style={{ flexShrink: 0, width: '20px', height: '20px', borderRadius: '50%', background: '#fde68a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#92400e', marginTop: '1px' }}>
-                    {i + 1}
-                  </div>
-                  <span style={{ fontSize: '13px', color: '#78350f', lineHeight: 1.5 }}>{s}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <style>{`
+<style>{`
         @keyframes ringPulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.06);opacity:0.6} }
         @keyframes recDot { 0%,100%{opacity:1} 50%{opacity:0.25} }
         @keyframes spin { to{transform:rotate(360deg)} }
