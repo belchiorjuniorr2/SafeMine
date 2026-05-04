@@ -96,7 +96,7 @@ export default function EnvironmentalReport() {
           </div>
         </div>
 
-        <button onClick={handleSubmit} disabled={submitting} style={{ ...submitStyle, background: submitting ? 'var(--gray)' : undefined }}>
+        <button onClick={handleSubmit} disabled={submitting} style={{ ...submitStyle, background: submitting ? 'var(--gray)' : 'var(--orange)' }}>
           {submitting ? 'Enviando...' : 'Enviar Registro'}
         </button>
       </div>

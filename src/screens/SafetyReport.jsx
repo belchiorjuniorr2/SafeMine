@@ -125,7 +125,7 @@ export default function SafetyReport() {
         <button
           onClick={handleSubmit}
           disabled={submitting}
-          style={{ ...submitStyle, background: submitting ? 'var(--gray)' : undefined }}
+          style={{ ...submitStyle, background: submitting ? 'var(--gray)' : 'var(--orange)' }}
         >
           {submitting ? 'Enviando...' : 'Enviar Registro'}
         </button>

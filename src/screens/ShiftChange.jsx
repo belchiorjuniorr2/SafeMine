@@ -117,7 +117,7 @@ export default function ShiftChange() {
           ))}
         </div>
 
-        <button onClick={handleSubmit} disabled={submitting} style={{ ...submitStyle, background: submitting ? 'var(--gray)' : undefined }}>
+        <button onClick={handleSubmit} disabled={submitting} style={{ ...submitStyle, background: submitting ? 'var(--gray)' : 'var(--orange)' }}>
           {submitting ? 'Enviando...' : 'Confirmar Passagem de Turno'}
         </button>
       </div>
