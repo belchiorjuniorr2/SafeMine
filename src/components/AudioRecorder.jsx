@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Square, Loader, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react'
+import { Mic, Loader, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react'
 
 const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_KEY || ''
 
@@ -23,7 +23,6 @@ const suggestionsPrompts = {
 
 async function parseWithAI(transcript, formType) {
   if (!ANTHROPIC_KEY) return { fields: { _noKey: true }, suggestions: [] }
-
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -69,8 +68,11 @@ export default function AudioRecorder({ formType, onResult }) {
   const recognitionRef = useRef(null)
   const timerRef = useRef(null)
   const transcriptRef = useRef('')
+  const finalTextRef = useRef('')
+  const isRecordingRef = useRef(false)
 
   useEffect(() => () => {
+    isRecordingRef.current = false
     recognitionRef.current?.stop()
     clearInterval(timerRef.current)
   }, [])
@@ -82,19 +84,43 @@ export default function AudioRecorder({ formType, onResult }) {
       return
     }
     transcriptRef.current = ''
+    finalTextRef.current = ''
     setLiveText('')
     setSuggestions([])
+    isRecordingRef.current = true
+
     const rec = new SpeechRecognition()
     rec.lang = 'pt-BR'
     rec.continuous = true
     rec.interimResults = true
 
     rec.onresult = (e) => {
-      const text = Array.from(e.results).map(r => r[0].transcript).join(' ')
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finalTextRef.current += e.results[i][0].transcript + ' '
+        } else {
+          interim += e.results[i][0].transcript
+        }
+      }
+      const text = finalTextRef.current + interim
       transcriptRef.current = text
       setLiveText(text)
     }
-    rec.onerror = () => setState('idle')
+
+    rec.onerror = (e) => {
+      if (e.error === 'no-speech') return
+      isRecordingRef.current = false
+      setState('idle')
+      clearInterval(timerRef.current)
+    }
+
+    rec.onend = () => {
+      if (isRecordingRef.current) {
+        try { rec.start() } catch { /* already started */ }
+      }
+    }
+
     recognitionRef.current = rec
     rec.start()
     setState('recording')
@@ -103,10 +129,11 @@ export default function AudioRecorder({ formType, onResult }) {
   }
 
   const stopRecording = async () => {
+    isRecordingRef.current = false
     recognitionRef.current?.stop()
     clearInterval(timerRef.current)
     setState('processing')
-    const text = transcriptRef.current || 'Sem transcrição'
+    const text = transcriptRef.current.trim() || 'Sem transcrição'
     const { fields, suggestions: sugs } = await parseWithAI(text, formType)
     onResult(fields, text)
     if (sugs.length > 0) {
@@ -114,129 +141,154 @@ export default function AudioRecorder({ formType, onResult }) {
       setSuggestionsOpen(true)
     }
     const filled = !fields._noKey && !fields._error
-    if (filled) {
-      setState('filled')
-      setTimeout(() => setState('idle'), 3000)
-    } else {
-      setState('idle')
-    }
+    setState(filled ? 'filled' : 'idle')
+    if (filled) setTimeout(() => setState('idle'), 3000)
+  }
+
+  const handleToggle = () => {
+    if (state === 'idle') startRecording()
+    else if (state === 'recording') stopRecording()
   }
 
   const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 
-  return (
-    <div style={{ paddingTop: '16px' }}>
+  const isRecording = state === 'recording'
+  const isProcessing = state === 'processing'
+  const isFilled = state === 'filled'
 
-      {/* Botão principal */}
-      <div style={{ position: 'relative' }}>
-        {state === 'recording' && (
-          <div style={{
-            position: 'absolute', inset: '-6px',
-            borderRadius: '20px',
-            border: '2px solid rgba(229,57,53,0.4)',
-            animation: 'recordRing 1.2s ease-in-out infinite'
-          }} />
-        )}
-        <button
-          onPointerDown={state === 'idle' ? startRecording : undefined}
-          onPointerUp={state === 'recording' ? stopRecording : undefined}
-          onClick={state === 'processing' || state === 'filled' ? undefined : (state === 'recording' ? stopRecording : startRecording)}
-          disabled={state === 'processing' || state === 'filled'}
-          style={{
-            width: '100%',
-            padding: state === 'recording' ? '22px 18px' : '18px',
-            borderRadius: '14px',
-            border: 'none',
-            background: state === 'recording' ? '#e53935'
-              : state === 'filled' ? '#43a047'
-              : state === 'processing' ? '#555'
-              : '#333',
-            color: '#fff',
-            fontSize: '16px',
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            transition: 'background 0.3s, padding 0.2s',
-            boxShadow: state === 'recording'
-              ? '0 0 0 0 rgba(229,57,53,0.5)'
-              : state === 'filled'
-              ? '0 4px 16px rgba(67,160,71,0.35)'
-              : '0 2px 8px rgba(0,0,0,0.15)',
-            position: 'relative',
-            overflow: 'hidden'
-          }}
-        >
-          {state === 'idle' && <><Mic size={22} /> Gravar Áudio</>}
-          {state === 'recording' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', width: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#fff', animation: 'recDot 1s ease-in-out infinite' }} />
-                <span style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '0.5px' }}>{fmt(seconds)}</span>
-                <Square size={18} fill="#fff" />
-              </div>
-              <span style={{ fontSize: '12px', fontWeight: 500, opacity: 0.85 }}>Gravando — toque para parar</span>
-            </div>
-          )}
-          {state === 'processing' && <><Loader size={20} style={{ animation: 'spin 1s linear infinite' }} /> Processando com IA...</>}
-          {state === 'filled' && <>✓ Campos preenchidos pela IA</>}
-        </button>
+  return (
+    <div style={{ paddingTop: '8px' }}>
+
+      {/* Header */}
+      <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+        <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-dark)', margin: '0 0 8px' }}>
+          {isRecording ? 'Gravando...' : isProcessing ? 'Processando...' : isFilled ? 'Campos preenchidos!' : 'Toque para gravar'}
+        </h2>
+        <p style={{ fontSize: '13px', color: 'var(--gray)', lineHeight: 1.5, margin: 0, padding: '0 16px' }}>
+          Descreva a ocorrência ou checklist detalhadamente. A IA preencherá os campos para você.
+        </p>
       </div>
 
-      {/* Transcrição ao vivo — aparece abaixo do botão durante a gravação */}
-      {(state === 'recording' || (state === 'processing' && liveText)) && (
-        <div style={{
-          marginTop: '10px',
-          background: state === 'recording' ? '#fff8f7' : '#f5f5f5',
-          border: `1.5px solid ${state === 'recording' ? 'rgba(229,57,53,0.2)' : 'var(--gray-mid)'}`,
-          borderRadius: '10px',
-          padding: '12px 14px',
-          fontSize: '13px',
-          color: 'var(--text-mid)',
-          lineHeight: 1.6,
-          minHeight: '48px',
-          transition: 'all 0.3s'
-        }}>
-          <span style={{ fontSize: '10px', fontWeight: 700, color: state === 'recording' ? '#e53935' : 'var(--gray)', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-            {state === 'recording' ? '● Transcrevendo' : 'Transcrição'}
-          </span>
-          {liveText || <span style={{ color: 'var(--gray)', fontStyle: 'italic' }}>Fale agora...</span>}
-          {state === 'recording' && <span style={{ animation: 'blink 1s step-end infinite', fontWeight: 700, color: '#e53935' }}>|</span>}
-        </div>
-      )}
-
-      {/* Dica quando idle */}
-      {state === 'idle' && !suggestions.length && (
-        <p style={{ textAlign: 'center', fontSize: '11px', color: 'var(--gray)', marginTop: '8px' }}>
-          Toque e fale — a IA preenche os campos e sugere tratativas
-        </p>
-      )}
-
-      {/* Sugestões de tratativa */}
-      {suggestions.length > 0 && (
-        <div style={{ marginTop: '12px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', overflow: 'hidden' }}>
+      {/* Circle button */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', marginBottom: '28px' }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {isRecording && (
+            <>
+              <div style={{ position: 'absolute', width: '124px', height: '124px', borderRadius: '50%', background: 'rgba(255,94,20,0.12)', animation: 'ringPulse 1.5s ease-in-out infinite' }} />
+              <div style={{ position: 'absolute', width: '148px', height: '148px', borderRadius: '50%', background: 'rgba(255,94,20,0.06)', animation: 'ringPulse 1.5s ease-in-out infinite 0.4s' }} />
+            </>
+          )}
           <button
-            onClick={() => setSuggestionsOpen(o => !o)}
+            onClick={isProcessing || isFilled ? undefined : handleToggle}
+            disabled={isProcessing || isFilled}
             style={{
-              width: '100%',
-              padding: '12px 14px',
+              width: '96px',
+              height: '96px',
+              borderRadius: '50%',
               border: 'none',
-              background: 'none',
+              background: isProcessing ? '#bbb' : isFilled ? '#43a047' : 'var(--orange)',
+              color: '#fff',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              textAlign: 'left'
+              justifyContent: 'center',
+              boxShadow: isRecording
+                ? '0 8px 32px rgba(255,94,20,0.45)'
+                : isFilled
+                ? '0 4px 20px rgba(67,160,71,0.4)'
+                : '0 4px 24px rgba(255,94,20,0.35)',
+              transition: 'all 0.25s',
+              cursor: isProcessing || isFilled ? 'default' : 'pointer',
+              position: 'relative',
+              zIndex: 1
             }}
+          >
+            {isProcessing
+              ? <Loader size={38} style={{ animation: 'spin 1s linear infinite' }} />
+              : isFilled
+              ? <span style={{ fontSize: '38px', lineHeight: 1 }}>✓</span>
+              : <Mic size={38} />
+            }
+          </button>
+        </div>
+
+        {/* Label pill below button */}
+        <div style={{
+          background: isRecording ? '#fff0ea' : isFilled ? '#e8f5e9' : '#f0f1f0',
+          borderRadius: '20px',
+          padding: '8px 22px',
+          fontSize: '13px',
+          fontWeight: 700,
+          letterSpacing: '0.8px',
+          color: isRecording ? 'var(--orange)' : isFilled ? '#43a047' : 'var(--text-dark)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '7px',
+          transition: 'all 0.25s'
+        }}>
+          {isRecording && (
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--orange)', display: 'inline-block', animation: 'recDot 1s ease-in-out infinite', flexShrink: 0 }} />
+          )}
+          {isProcessing ? 'PROCESSANDO...' : isFilled ? 'PREENCHIDO!' : isRecording ? fmt(seconds) : 'GRAVAR'}
+        </div>
+      </div>
+
+      {/* Transcription section */}
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+          <span style={{ color: 'var(--orange)', fontSize: '15px', fontWeight: 700 }}>✦</span>
+          <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.8px', color: 'var(--text-dark)', textTransform: 'uppercase' }}>Transcrição da IA</span>
+        </div>
+        <div style={{
+          border: `1.5px dashed ${isRecording ? 'var(--orange)' : 'var(--gray-mid)'}`,
+          borderRadius: '12px',
+          padding: '18px 16px',
+          minHeight: '88px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: liveText ? 'flex-start' : 'center',
+          justifyContent: 'center',
+          background: isRecording ? '#fff8f5' : '#fafafa',
+          transition: 'all 0.3s'
+        }}>
+          {liveText ? (
+            <p style={{ fontSize: '13px', color: 'var(--text-mid)', lineHeight: 1.6, margin: 0 }}>
+              {liveText}
+              {isRecording && <span style={{ animation: 'blink 1s step-end infinite', fontWeight: 700, color: 'var(--orange)' }}>|</span>}
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '10px', height: '32px' }}>
+                {[0.35, 0.65, 1, 0.55, 0.85, 0.45, 0.75, 0.4, 0.7, 0.95, 0.5].map((h, i) => (
+                  <div key={i} style={{
+                    width: '3px',
+                    height: `${h * 28}px`,
+                    borderRadius: '2px',
+                    background: isRecording ? 'var(--orange)' : 'var(--gray-mid)',
+                    animation: isRecording ? `wave${i % 3} 0.9s ease-in-out infinite ${i * 0.08}s` : 'none',
+                    transition: 'background 0.3s'
+                  }} />
+                ))}
+              </div>
+              <span style={{ fontSize: '13px', color: 'var(--gray)', fontStyle: 'italic' }}>
+                {isRecording ? 'Escutando...' : 'O áudio transcrito aparecerá aqui...'}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Suggestions */}
+      {suggestions.length > 0 && (
+        <div style={{ marginBottom: '16px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', overflow: 'hidden' }}>
+          <button
+            onClick={() => setSuggestionsOpen(o => !o)}
+            style={{ width: '100%', padding: '12px 14px', border: 'none', background: 'none', display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left' }}
           >
             <Lightbulb size={16} color="#d97706" />
             <span style={{ flex: 1, fontSize: '13px', fontWeight: 700, color: '#92400e' }}>
               Sugestões de Tratativa ({suggestions.length})
             </span>
-            {suggestionsOpen
-              ? <ChevronUp size={16} color="#d97706" />
-              : <ChevronDown size={16} color="#d97706" />
-            }
+            {suggestionsOpen ? <ChevronUp size={16} color="#d97706" /> : <ChevronDown size={16} color="#d97706" />}
           </button>
           {suggestionsOpen && (
             <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -254,10 +306,13 @@ export default function AudioRecorder({ formType, onResult }) {
       )}
 
       <style>{`
-        @keyframes recordRing { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.02)} }
-        @keyframes recDot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        @keyframes ringPulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.06);opacity:0.6} }
+        @keyframes recDot { 0%,100%{opacity:1} 50%{opacity:0.25} }
         @keyframes spin { to{transform:rotate(360deg)} }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        @keyframes wave0 { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(0.3)} }
+        @keyframes wave1 { 0%,100%{transform:scaleY(0.5)} 50%{transform:scaleY(1)} }
+        @keyframes wave2 { 0%,100%{transform:scaleY(0.8)} 50%{transform:scaleY(0.2)} }
       `}</style>
     </div>
   )

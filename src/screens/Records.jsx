@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ChevronDown, ChevronUp } from 'lucide-react'
+import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ChevronDown, ChevronUp, Trash2, X, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
 
@@ -41,6 +41,9 @@ export default function Records() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('todos')
   const [expandedId, setExpandedId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null) // { id, tipo }
+  const [justification, setJustification] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     supabase
@@ -59,6 +62,33 @@ export default function Records() {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   })
 
+  const openDeleteModal = (e, rec) => {
+    e.stopPropagation()
+    setDeleteTarget({ id: rec.id, tipo: rec.tipo })
+    setJustification('')
+  }
+
+  const cancelDelete = () => {
+    setDeleteTarget(null)
+    setJustification('')
+  }
+
+  const confirmDelete = async () => {
+    if (!justification.trim()) return
+    setDeleting(true)
+    const { error } = await supabase
+      .from('registros')
+      .delete()
+      .eq('id', deleteTarget.id)
+    if (!error) {
+      setRecords(prev => prev.filter(r => r.id !== deleteTarget.id))
+      if (expandedId === deleteTarget.id) setExpandedId(null)
+      setDeleteTarget(null)
+      setJustification('')
+    }
+    setDeleting(false)
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--gray-light)', paddingBottom: '32px' }}>
       <Header
@@ -67,14 +97,7 @@ export default function Records() {
       />
 
       {/* Filtros */}
-      <div style={{
-        padding: '12px 16px',
-        display: 'flex',
-        gap: '8px',
-        overflowX: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        scrollbarWidth: 'none'
-      }}>
+      <div style={{ padding: '12px 16px', display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {['todos', ...Object.keys(tipos)].map(t => {
           const cfg = t === 'todos' ? { label: 'Todos', color: '#1a1a1a' } : tipos[t]
           const active = filter === t
@@ -126,6 +149,7 @@ export default function Records() {
             const badge = dados[badgeKey[rec.tipo]]
             const previewFields = ['local', 'colaborador', 'area_inspecionada', 'placa', 'frente_trabalho', 'setor']
             const preview = previewFields.map(k => dados[k]).filter(Boolean)[0] || Object.values(dados).find(v => typeof v === 'string' && v && !v.startsWith('_')) || ''
+            const isDeleteTarget = deleteTarget?.id === rec.id
 
             return (
               <div key={rec.id} style={{ background: '#fff', borderRadius: '16px', marginBottom: '10px', boxShadow: 'var(--shadow)', overflow: 'hidden' }}>
@@ -163,8 +187,8 @@ export default function Records() {
                 </button>
 
                 {isExpanded && (
-                  <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--gray-light)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', paddingTop: '12px' }}>
+                  <div style={{ borderTop: '1px solid var(--gray-light)' }}>
+                    <div style={{ padding: '12px 16px 4px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                       {Object.entries(dados)
                         .filter(([k, v]) => !k.startsWith('_') && v !== '' && v !== null && v !== undefined)
                         .map(([k, v]) => (
@@ -179,6 +203,109 @@ export default function Records() {
                         ))
                       }
                     </div>
+
+                    {/* Delete section */}
+                    {!isDeleteTarget ? (
+                      <div style={{ padding: '12px 16px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={(e) => openDeleteModal(e, rec)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 14px',
+                            borderRadius: '10px',
+                            border: '1.5px solid #fecaca',
+                            background: '#fff5f5',
+                            color: '#dc2626',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          Excluir registro
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ margin: '0 16px 16px', background: '#fff5f5', border: '1.5px solid #fecaca', borderRadius: '12px', padding: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                          <AlertTriangle size={15} color="#dc2626" />
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#dc2626' }}>Confirmar exclusão</span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#7f1d1d', margin: '0 0 10px', lineHeight: 1.4 }}>
+                          Esta ação não pode ser desfeita. Informe o motivo da exclusão:
+                        </p>
+                        <textarea
+                          value={justification}
+                          onChange={e => setJustification(e.target.value)}
+                          placeholder="Descreva o motivo da exclusão..."
+                          rows={3}
+                          style={{
+                            width: '100%',
+                            borderRadius: '8px',
+                            border: '1.5px solid #fca5a5',
+                            padding: '10px',
+                            fontSize: '13px',
+                            resize: 'none',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                            background: '#fff',
+                            color: 'var(--text-dark)',
+                            lineHeight: 1.4,
+                            fontFamily: 'inherit'
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          <button
+                            onClick={cancelDelete}
+                            style={{
+                              flex: 1,
+                              padding: '9px',
+                              borderRadius: '8px',
+                              border: '1.5px solid var(--gray-mid)',
+                              background: '#fff',
+                              color: 'var(--gray)',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '5px'
+                            }}
+                          >
+                            <X size={13} /> Cancelar
+                          </button>
+                          <button
+                            onClick={confirmDelete}
+                            disabled={!justification.trim() || deleting}
+                            style={{
+                              flex: 1,
+                              padding: '9px',
+                              borderRadius: '8px',
+                              border: 'none',
+                              background: justification.trim() ? '#dc2626' : '#fca5a5',
+                              color: '#fff',
+                              fontSize: '13px',
+                              fontWeight: 700,
+                              cursor: justification.trim() && !deleting ? 'pointer' : 'default',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '5px',
+                              transition: 'background 0.2s'
+                            }}
+                          >
+                            {deleting ? (
+                              <div style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                            ) : (
+                              <><Trash2 size={13} /> Excluir</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -186,6 +313,7 @@ export default function Records() {
           })
         )}
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
