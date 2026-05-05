@@ -131,7 +131,11 @@ export default function AudioRecorder({ formType, onResult }) {
     clearInterval(timerRef.current)
     setState('processing')
     const text = transcriptRef.current.trim() || 'Sem transcrição'
-    const { fields, suggestions: sugs } = await parseWithAI(text, formType)
+    const { fields: rawFields, suggestions: sugs } = await parseWithAI(text, formType)
+    // Strip null/empty values so profile defaults are never overridden by blank AI extractions
+    const fields = rawFields._noKey || rawFields._error
+      ? rawFields
+      : Object.fromEntries(Object.entries(rawFields).filter(([, v]) => v != null && v !== ''))
     onResult(fields, text, sugs)
     const filled = !fields._noKey && !fields._error
     setState(filled ? 'filled' : 'idle')

@@ -178,9 +178,13 @@ export default function QuickVoiceCapture() {
 
     setTimeout(() => {
       setOpen(false)
+      // Filter out null/empty values so profile defaults are not overridden by Claude's blanks
+      const campos = Object.fromEntries(
+        Object.entries(result.campos || {}).filter(([, v]) => v != null && v !== '')
+      )
       navigate(ROUTE_MAP[result.tipo], {
         state: {
-          _prefilled: result.campos || {},
+          _prefilled: campos,
           _suggestions: result.tratativas || [],
         }
       })
