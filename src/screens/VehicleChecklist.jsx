@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useProfile } from '../context/ProfileContext'
 import Header from '../components/Header'
 import AudioRecorder from '../components/AudioRecorder'
 import FileAttach from '../components/FileAttach'
@@ -27,6 +28,7 @@ export default function VehicleChecklist() {
   const location = useLocation()
   const today = new Date().toISOString().slice(0, 10)
   const { user } = useAuth()
+  const { getDefaults } = useProfile()
   const initChecklist = Object.fromEntries(checklistItems.map(i => [i.key, 'OK']))
   const [f, setF] = useState({ data: today, ...initChecklist })
   const [files, setFiles] = useState([])
@@ -34,8 +36,7 @@ export default function VehicleChecklist() {
 
   useEffect(() => {
     const { _prefilled } = location.state || {}
-    if (!_prefilled) return
-    setF(p => ({ ...p, ..._prefilled }))
+    setF(p => ({ ...p, ...getDefaults('veiculo'), ..._prefilled }))
   }, [])
 
   const handleAI = (parsed, _t, sugs) => {

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
-import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ClipboardList, LogOut, ChevronRight } from 'lucide-react'
+import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ClipboardList, LogOut, ChevronRight, UserCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../context/ProfileContext'
 import QuickVoiceCapture from '../components/QuickVoiceCapture'
 
 const cards = [
@@ -15,6 +16,7 @@ const cards = [
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+  const { profile } = useProfile()
   const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   const handleSignOut = async () => {
@@ -37,17 +39,38 @@ export default function Dashboard() {
                 <div style={{ color: 'var(--orange)', fontSize: '11px', fontWeight: 500 }}>Segurança em Campo</div>
               </div>
             </div>
-            <button
-              onClick={handleSignOut}
-              style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: 600 }}
-            >
-              <LogOut size={14} /> Sair
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => navigate('/perfil')}
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <UserCircle size={18} color="rgba(255,255,255,0.8)" />
+              </button>
+              <button
+                onClick={handleSignOut}
+                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                <LogOut size={14} /> Sair
+              </button>
+            </div>
           </div>
           <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', marginTop: '10px', textTransform: 'capitalize' }}>{today}</div>
-          {user?.email && (
-            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', marginTop: '2px' }}>{user.email}</div>
-          )}
+          <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {profile.nome ? (
+              <>
+                <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{profile.nome}</span>
+                {profile.matricula && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>· Mat. {profile.matricula}</span>}
+                {profile.funcao && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', display: 'none' }}>{profile.funcao}</span>}
+              </>
+            ) : (
+              <button
+                onClick={() => navigate('/perfil')}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'rgba(255,94,20,0.8)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Preencher perfil para auto-identificação
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

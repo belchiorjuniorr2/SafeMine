@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ProfileProvider } from './context/ProfileContext'
 import Dashboard from './screens/Dashboard'
 import SafetyReport from './screens/SafetyReport'
 import EnvironmentalReport from './screens/EnvironmentalReport'
@@ -10,6 +11,7 @@ import SafetyInspection from './screens/SafetyInspection'
 import Success from './screens/Success'
 import Login from './screens/Login'
 import Records from './screens/Records'
+import Profile from './screens/Profile'
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth()
@@ -36,6 +38,7 @@ function AppRoutes() {
       <Route path="/inspecao" element={<ProtectedRoute><SafetyInspection /></ProtectedRoute>} />
       <Route path="/sucesso" element={<ProtectedRoute><Success /></ProtectedRoute>} />
       <Route path="/registros" element={<ProtectedRoute><Records /></ProtectedRoute>} />
+      <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
     </Routes>
   )
 }
@@ -44,7 +47,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ProfileProvider>
+          <AppRoutes />
+        </ProfileProvider>
       </AuthProvider>
     </BrowserRouter>
   )
