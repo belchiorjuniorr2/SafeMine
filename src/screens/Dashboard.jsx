@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ClipboardList, LogOut, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import QuickVoiceCapture from '../components/QuickVoiceCapture'
 
 const cards = [
   { icon: ShieldAlert, label: 'Segurança', sub: 'Registro de Ocorrências', path: '/seguranca', color: '#e53935' },
@@ -50,7 +51,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main style={{ padding: '20px 16px' }}>
+      <main style={{ padding: '20px 16px', paddingBottom: '108px' }}>
         <div style={{ marginBottom: '20px' }}>
           <div style={{ fontSize: '13px', color: 'var(--gray)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '4px' }}>
             Registros
@@ -121,6 +122,7 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+      <QuickVoiceCapture />
     </div>
   )
 }

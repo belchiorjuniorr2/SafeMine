@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Header from '../components/Header'
 import AudioRecorder from '../components/AudioRecorder'
 import FileAttach from '../components/FileAttach'
@@ -11,12 +11,23 @@ const nivColor = n => n === 'Alto' ? '#e53935' : n === 'Médio' ? '#f57c00' : '#
 
 export default function EnvironmentalReport() {
   const navigate = useNavigate()
+  const location = useLocation()
   const today = new Date().toISOString().slice(0, 10)
   const now = new Date().toTimeString().slice(0, 5)
   const { user } = useAuth()
   const [f, setF] = useState({ data: today, hora: now })
   const [files, setFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    const { _prefilled, _suggestions } = location.state || {}
+    if (!_prefilled) return
+    setF(p => ({
+      ...p,
+      ..._prefilled,
+      ...(_suggestions?.length ? { tratativas: _suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n') } : {})
+    }))
+  }, [])
 
   const handleAI = (parsed, _t, sugs) => {
     if (parsed._noKey || parsed._error) return
