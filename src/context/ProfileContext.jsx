@@ -1,9 +1,11 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { useAuth } from './AuthContext'
+import { supabase } from '../lib/supabase'
 
 const ProfileCtx = createContext(null)
 
-// Which form field maps to which profile field
+const EMPTY = { nome: '', funcao: '', matricula: '', setor: '', turno: '' }
+
 const FORM_MAP = {
   seguranca: { colaborador: 'nome' },
   ambiental: { responsavel: 'nome' },
@@ -22,27 +24,43 @@ function buildDefaults(profile, formType) {
   return result
 }
 
+function extractProfile(meta = {}) {
+  return {
+    nome:      meta.nome      || '',
+    funcao:    meta.funcao    || '',
+    matricula: meta.matricula || '',
+    setor:     meta.setor     || '',
+    turno:     meta.turno     || '',
+  }
+}
+
 export function ProfileProvider({ children }) {
   const { user } = useAuth()
-  const [profile, setProfileState] = useState({ nome: '', funcao: '', matricula: '', setor: '' })
+  // Load immediately from user_metadata so Profile screen shows data on first render
+  const [profile, setProfileState] = useState(() => extractProfile(user?.user_metadata))
+  const [saving, setSaving] = useState(false)
 
+  // Re-sync when user object changes (e.g. after updateUser resolves)
   useEffect(() => {
     if (!user) return
-    const stored = localStorage.getItem(`profile_${user.id}`)
-    if (stored) {
-      try { setProfileState(JSON.parse(stored)) } catch { /* corrupted data */ }
-    }
+    setProfileState(extractProfile(user.user_metadata))
   }, [user])
 
-  const setProfile = (data) => {
+  const setProfile = async (data) => {
+    setSaving(true)
     setProfileState(data)
-    if (user) localStorage.setItem(`profile_${user.id}`, JSON.stringify(data))
+    const { data: updated, error } = await supabase.auth.updateUser({ data })
+    if (!error && updated?.user) {
+      setProfileState(extractProfile(updated.user.user_metadata))
+    }
+    setSaving(false)
+    return !error
   }
 
   const getDefaults = (formType) => buildDefaults(profile, formType)
 
   return (
-    <ProfileCtx.Provider value={{ profile, setProfile, getDefaults }}>
+    <ProfileCtx.Provider value={{ profile, setProfile, getDefaults, saving }}>
       {children}
     </ProfileCtx.Provider>
   )

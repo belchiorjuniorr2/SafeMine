@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { User, ChevronLeft, Check, Briefcase, Hash, Layers } from 'lucide-react'
+import { User, ChevronLeft, Check, Briefcase, Hash, Layers, Loader } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
 
@@ -9,19 +9,31 @@ const turnos = ['Manhã', 'Tarde', 'Noite']
 export default function Profile() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { profile, setProfile } = useProfile()
+  const { profile, setProfile, saving } = useProfile()
   const [f, setF] = useState({ ...profile })
   const [saved, setSaved] = useState(false)
+  const initialized = useRef(false)
+
+  // Sync form when profile loads from Supabase (may arrive after mount)
+  useEffect(() => {
+    if (initialized.current) return
+    if (!profile.nome && !profile.funcao && !profile.matricula) return
+    initialized.current = true
+    setF({ ...profile })
+  }, [profile])
 
   const upd = key => e => setF(p => ({ ...p, [key]: e.target.value }))
 
-  const handleSave = () => {
-    setProfile(f)
-    setSaved(true)
-    setTimeout(() => { setSaved(false); navigate('/') }, 1200)
+  const handleSave = async () => {
+    const ok = await setProfile(f)
+    if (ok !== false) {
+      setSaved(true)
+      setTimeout(() => { setSaved(false); navigate('/') }, 1200)
+    }
   }
 
   const hasChanges = JSON.stringify(f) !== JSON.stringify(profile)
+  const isDisabled = saving || saved || !hasChanges
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--gray-light)', paddingBottom: '32px' }}>
@@ -156,13 +168,13 @@ export default function Profile() {
         {/* Save button */}
         <button
           onClick={handleSave}
-          disabled={!hasChanges && !saved}
+          disabled={isDisabled}
           style={{
             width: '100%',
             padding: '16px',
             borderRadius: '14px',
             border: 'none',
-            background: saved ? '#43a047' : hasChanges ? 'var(--orange)' : 'var(--gray-mid)',
+            background: saved ? '#43a047' : saving ? '#f57c00' : hasChanges ? 'var(--orange)' : 'var(--gray-mid)',
             color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
@@ -172,11 +184,16 @@ export default function Profile() {
             justifyContent: 'center',
             gap: '8px',
             transition: 'all 0.2s',
-            cursor: hasChanges || saved ? 'pointer' : 'default',
+            cursor: isDisabled ? 'default' : 'pointer',
           }}
         >
-          {saved ? <><Check size={18} /> Salvo!</> : 'Salvar Perfil'}
+          {saved
+            ? <><Check size={18} /> Salvo no Supabase!</>
+            : saving
+            ? <><Loader size={18} style={{ animation: 'profSpin 1s linear infinite' }} /> Salvando...</>
+            : 'Salvar Perfil'}
         </button>
+        <style>{`@keyframes profSpin { to { transform: rotate(360deg) } }`}</style>
       </div>
     </div>
   )
