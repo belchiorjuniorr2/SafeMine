@@ -13,11 +13,12 @@ const tipos = {
 }
 
 const fieldLabels = {
+  nome: 'Nome', matricula: 'Matrícula', funcao: 'Função',
   local: 'Local', data: 'Data', hora: 'Hora', colaborador: 'Colaborador',
   descricao_ocorrencia: 'Descrição', causa_raiz: 'Causa Raiz', acao_imediata: 'Ação Imediata',
   gravidade: 'Gravidade', responsavel: 'Responsável', tipo_impacto: 'Tipo de Impacto',
   area_afetada: 'Área Afetada', descricao: 'Descrição', medida_tomada: 'Medida Tomada',
-  nivel_criticidade: 'Criticidade', setor: 'Setor', funcao: 'Função',
+  nivel_criticidade: 'Criticidade', setor: 'Setor',
   posto_trabalho: 'Posto', descricao_risco: 'Risco', sintoma_relatado: 'Sintoma',
   recomendacao: 'Recomendação', prioridade: 'Prioridade', placa: 'Placa',
   modelo: 'Modelo', km_atual: 'KM Atual', operador: 'Operador', turno: 'Turno',
@@ -37,51 +38,95 @@ const fieldLabels = {
 const badgeKey = { seguranca: 'gravidade', ambiental: 'nivel_criticidade', ergonomia: 'prioridade' }
 const badgeColor = { Grave: '#e53935', Moderado: '#f57c00', Leve: '#43a047', Alto: '#e53935', Médio: '#f57c00', Baixo: '#43a047', Alta: '#e53935', Média: '#f57c00', Baixa: '#43a047' }
 
+function formatFieldValue(v) {
+  if (v == null) return ''
+  if (typeof v === 'object') {
+    try { return JSON.stringify(v) } catch { return String(v) }
+  }
+  return String(v)
+}
+
 export default function Records() {
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [filter, setFilter] = useState('todos')
   const [expandedId, setExpandedId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null) // { id, tipo }
   const [justification, setJustification] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
-    supabase
-      .from('registros')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('registros')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (cancelled) return
+      if (error) {
+        setLoadError(error.message || 'Não foi possível carregar os registros.')
+        setRecords([])
+      } else {
         setRecords(data || [])
-        setLoading(false)
-      })
+      }
+      setLoading(false)
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const filtered = filter === 'todos' ? records : records.filter(r => r.tipo === filter)
 
-  const fmtDate = iso => new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-  })
+  const fmtDate = iso => {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return '—'
+    return d.toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    })
+  }
 
   const openDeleteModal = (e, rec) => {
     e.stopPropagation()
     setDeleteTarget({ id: rec.id, tipo: rec.tipo })
     setJustification('')
+    setDeleteError('')
   }
 
   const cancelDelete = () => {
     setDeleteTarget(null)
     setJustification('')
+    setDeleteError('')
   }
 
   const confirmDelete = async () => {
     if (!justification.trim()) return
     setDeleting(true)
+    setDeleteError('')
+    // Persiste a justificativa nos dados do registro antes de excluir (auditoria mínima)
+    const target = records.find(r => r.id === deleteTarget.id)
+    if (target) {
+      await supabase
+        .from('registros')
+        .update({
+          dados: {
+            ...(target.dados || {}),
+            _exclusao: {
+              justificativa: justification.trim(),
+              em: new Date().toISOString(),
+            },
+          },
+        })
+        .eq('id', deleteTarget.id)
+    }
     const { error } = await supabase
       .from('registros')
       .delete()
       .eq('id', deleteTarget.id)
-    if (!error) {
+    if (error) {
+      setDeleteError(error.message || 'Falha ao excluir o registro.')
+    } else {
       setRecords(prev => prev.filter(r => r.id !== deleteTarget.id))
       if (expandedId === deleteTarget.id) setExpandedId(null)
       setDeleteTarget(null)
@@ -91,16 +136,17 @@ export default function Records() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--gray-light)', paddingBottom: '32px' }}>
+    <div className="app-shell">
       <Header
         title="Consultar Registros"
         subtitle={loading ? 'Carregando...' : `${records.length} registro${records.length !== 1 ? 's' : ''} encontrado${records.length !== 1 ? 's' : ''}`}
+        icon="/icons/registros.png"
       />
 
       {/* Filtros */}
-      <div style={{ padding: '12px 16px', display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+      <div style={{ maxWidth: 'var(--max-width)', margin: '0 auto', width: '100%', padding: '12px var(--page-pad)', display: 'flex', gap: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {['todos', ...Object.keys(tipos)].map(t => {
-          const cfg = t === 'todos' ? { label: 'Todos', color: '#1a1a1a' } : tipos[t]
+          const cfg = t === 'todos' ? { label: 'Todos', color: '#FF9A5C' } : tipos[t]
           const active = filter === t
           return (
             <button
@@ -125,11 +171,16 @@ export default function Records() {
         })}
       </div>
 
-      <div style={{ padding: '0 16px' }}>
+      <div className="app-main app-main--form" style={{ paddingTop: 0 }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
             <div style={{ width: '32px', height: '32px', border: '3px solid var(--orange)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
             <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+          </div>
+        ) : loadError ? (
+          <div style={{ textAlign: 'center', padding: '40px 16px', background: '#fff', borderRadius: '16px', boxShadow: 'var(--shadow)' }}>
+            <div style={{ fontWeight: 700, fontSize: '15px', color: '#dc2626', marginBottom: '8px' }}>Erro ao carregar</div>
+            <div style={{ fontSize: '13px', color: 'var(--gray)', lineHeight: 1.45 }}>{loadError}</div>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '56px 0' }}>
@@ -148,7 +199,7 @@ export default function Records() {
             const isExpanded = expandedId === rec.id
             const dados = rec.dados || {}
             const badge = dados[badgeKey[rec.tipo]]
-            const previewFields = ['local', 'colaborador', 'area_inspecionada', 'placa', 'frente_trabalho', 'setor']
+            const previewFields = ['nome', 'local', 'colaborador', 'area_inspecionada', 'placa', 'frente_trabalho', 'setor']
             const preview = previewFields.map(k => dados[k]).filter(Boolean)[0] || Object.values(dados).find(v => typeof v === 'string' && v && !v.startsWith('_')) || ''
             const isDeleteTarget = deleteTarget?.id === rec.id
 
@@ -192,14 +243,14 @@ export default function Records() {
                     <div style={{ padding: '12px 16px 4px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                         {Object.entries(dados)
-                          .filter(([k, v]) => !k.startsWith('_') && k !== 'anexos' && k !== 'tratativas' && v !== '' && v !== null && v !== undefined)
+                          .filter(([k, v]) => !k.startsWith('_') && k !== 'anexos' && k !== 'tratativas' && v !== '' && v !== null && v !== undefined && typeof v !== 'object')
                           .map(([k, v]) => (
                             <div key={k} style={{ background: 'var(--gray-light)', borderRadius: '8px', padding: '8px 10px' }}>
                               <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--gray)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>
                                 {fieldLabels[k] || k}
                               </div>
                               <div style={{ fontSize: '13px', color: 'var(--text-dark)', fontWeight: 500, wordBreak: 'break-word', lineHeight: 1.4 }}>
-                                {String(v)}
+                                {formatFieldValue(v)}
                               </div>
                             </div>
                           ))
@@ -291,6 +342,9 @@ export default function Records() {
                             fontFamily: 'inherit'
                           }}
                         />
+                        {deleteError && (
+                          <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '8px', fontWeight: 500 }}>{deleteError}</div>
+                        )}
                         <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                           <button
                             onClick={cancelDelete}

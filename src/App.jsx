@@ -16,7 +16,7 @@ import Profile from './screens/Profile'
 function ProtectedRoute({ children }) {
   const { user } = useAuth()
   if (user === undefined) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--gray-light)' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--gray-page)' }}>
       <div style={{ width: '32px', height: '32px', border: '3px solid var(--orange)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
@@ -25,10 +25,17 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+function PublicOnly({ children }) {
+  const { user } = useAuth()
+  if (user === undefined) return null
+  if (user) return <Navigate to="/" replace />
+  return children
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
+      <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/seguranca" element={<ProtectedRoute><SafetyReport /></ProtectedRoute>} />
       <Route path="/ambiental" element={<ProtectedRoute><EnvironmentalReport /></ProtectedRoute>} />
@@ -39,6 +46,7 @@ function AppRoutes() {
       <Route path="/sucesso" element={<ProtectedRoute><Success /></ProtectedRoute>} />
       <Route path="/registros" element={<ProtectedRoute><Records /></ProtectedRoute>} />
       <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

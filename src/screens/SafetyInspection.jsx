@@ -4,7 +4,10 @@ import { useProfile } from '../context/ProfileContext'
 import Header from '../components/Header'
 import AudioRecorder from '../components/AudioRecorder'
 import FileAttach from '../components/FileAttach'
-import { supabase } from '../lib/supabase'
+import ReporterFields from '../components/ReporterFields'
+import SubmitError from '../components/SubmitError'
+import { submitRegistro } from '../lib/submitRegistro'
+import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
 
 const tiposInspecao = ['Rotina', 'Especial', 'Auditoria']
@@ -19,55 +22,61 @@ export default function SafetyInspection() {
   const [f, setF] = useState({ data: today, hora: now })
   const [files, setFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const { _prefilled, _suggestions } = location.state || {}
+    const { _prefilled, _suggestions, _transcript, _audioBlob } = location.state || {}
     setF(p => ({
       ...p,
       ...getDefaults('inspecao'),
-      ..._prefilled,
+      ...withoutIdentity(_prefilled || {}),
       ...(_suggestions?.length ? { tratativas: _suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n') } : {})
     }))
   }, [])
 
   const handleAI = (parsed, _t, sugs) => {
     if (parsed._noKey || parsed._error) return
-    const update = { ...parsed }
-    if (sugs?.length) update.tratativas = sugs.map((s, i) => `${i + 1}. ${s}`).join('\n')
-    setF(p => ({ ...p, ...update }))
+    setF(p => mergeAiIntoForm(p, parsed, sugs))
   }
 
   const handleSubmit = async () => {
+    setError('')
     setSubmitting(true)
-    let anexos = []
-    for (const file of files) {
-      const path = `${user.id}/${Date.now()}_${file.name}`
-      const { error } = await supabase.storage.from('relatos-anexos').upload(path, file)
-      if (!error) {
-        const { data: { publicUrl } } = supabase.storage.from('relatos-anexos').getPublicUrl(path)
-        anexos.push({ url: publicUrl, name: file.name, type: file.type })
+    try {
+      const result = await submitRegistro({ tipo: 'inspecao', dados: f, files, user })
+      if (!result.ok) {
+        setError(result.error)
+        return
       }
+      navigate('/sucesso', { state: { type: 'inspecao', data: result.dados, emailSent: result.emailSent, emailTo: result.emailTo, emailError: result.emailError } })
+    } catch (err) {
+      setError(err?.message || 'Erro inesperado ao enviar a inspeção.')
+    } finally {
+      setSubmitting(false)
     }
-    const dados = { ...f, ...(anexos.length ? { anexos } : {}) }
-    await supabase.from('registros').insert({ tipo: 'inspecao', dados, user_id: user.id, user_email: user.email })
-    setSubmitting(false)
-    navigate('/sucesso', { state: { type: 'inspecao', data: dados } })
   }
 
   const upd = key => e => setF(p => ({ ...p, [key]: e.target.value }))
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--gray-light)', paddingBottom: '32px' }}>
-      <Header title="Inspeção de Segurança" subtitle="Inspeção de Campo" />
-      <div style={{ padding: '16px' }}>
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '16px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-dark)', marginBottom: '4px' }}>Preencher por voz</div>
-          <div style={{ fontSize: '12px', color: 'var(--gray)' }}>Grave os resultados da inspeção — a IA preenche automaticamente</div>
-          <AudioRecorder formType="inspecao" onResult={handleAI} />
+    <div className="app-shell">
+      <Header title="Inspeção de Segurança" subtitle="Inspeção de Campo" icon="/icons/inspecao.png" />
+      <div className="app-main app-main--form">
+        <div className="panel">
+          <div className="panel__title">Preencher por voz</div>
+          <div className="panel__hint">Grave os resultados da inspeção — a IA preenche automaticamente</div>
+          <AudioRecorder
+            formType="inspecao"
+            onResult={handleAI}
+            initialTranscript={location.state?._transcript || ''}
+            initialAudioBlob={location.state?._audioBlob || null}
+          />
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '12px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--gray-light)' }}>Identificação</div>
+        <ReporterFields f={f} setF={setF} />
+
+        <div className="panel">
+          <div className="panel__heading">Dados da inspeção</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
             <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>Data</label>
@@ -78,25 +87,22 @@ export default function SafetyInspection() {
               <input type="time" value={f.hora || ''} onChange={upd('hora')} style={inputStyle} />
             </div>
           </div>
-          {[['Área Inspecionada', 'area_inspecionada', 'Ex: Pátio de estocagem'],
-            ['Inspetor', 'inspector', 'Nome do inspetor']].map(([label, key, ph]) => (
-            <div key={key} style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>{label}</label>
-              <input value={f[key] || ''} onChange={upd(key)} placeholder={ph} style={inputStyle} />
-            </div>
-          ))}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={labelStyle}>Área Inspecionada</label>
+            <input value={f.area_inspecionada || ''} onChange={upd('area_inspecionada')} placeholder="Ex: Pátio de estocagem" style={inputStyle} />
+          </div>
           <div style={{ marginBottom: '16px' }}>
             <label style={labelStyle}>Tipo de Inspeção</label>
             <div style={{ display: 'flex', gap: '8px' }}>
               {tiposInspecao.map(t => (
-                <button key={t} onClick={() => setF(p => ({ ...p, tipo_inspecao: t }))} style={{ flex: 1, padding: '10px 0', borderRadius: '10px', border: `2px solid ${f.tipo_inspecao === t ? 'var(--orange)' : 'var(--gray-mid)'}`, background: f.tipo_inspecao === t ? 'rgba(255,94,20,0.1)' : '#fff', color: f.tipo_inspecao === t ? 'var(--orange)' : 'var(--gray)', fontWeight: 700, fontSize: '12px', transition: 'all 0.15s' }}>{t}</button>
+                <button key={t} type="button" onClick={() => setF(p => ({ ...p, tipo_inspecao: t }))} style={{ flex: 1, padding: '10px 0', borderRadius: '10px', border: `2px solid ${f.tipo_inspecao === t ? 'var(--orange)' : 'var(--gray-mid)'}`, background: f.tipo_inspecao === t ? 'rgba(255,94,20,0.1)' : '#fff', color: f.tipo_inspecao === t ? 'var(--orange)' : 'var(--gray)', fontWeight: 700, fontSize: '12px', transition: 'all 0.15s' }}>{t}</button>
               ))}
             </div>
           </div>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '12px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--gray-light)' }}>Resultados</div>
+        <div className="panel">
+          <div className="panel__heading">Resultados</div>
           {[['Conformidades', 'conformidades', 'Itens em conformidade...'],
             ['Não Conformidades', 'nao_conformidades', 'Itens fora de conformidade...'],
             ['Recomendações', 'recomendacoes', 'Ações recomendadas...'],
@@ -108,8 +114,8 @@ export default function SafetyInspection() {
           ))}
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '12px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--gray-light)' }}>Plano de Ação</div>
+        <div className="panel">
+          <div className="panel__heading">Plano de Ação</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 12px' }}>
             <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>Prazo da Ação</label>
@@ -122,12 +128,13 @@ export default function SafetyInspection() {
           </div>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: '16px', padding: '16px', boxShadow: 'var(--shadow)', marginBottom: '16px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid var(--gray-light)' }}>Anexos</div>
+        <div className="panel">
+          <div className="panel__heading">Anexos</div>
           <FileAttach files={files} onChange={setFiles} />
         </div>
 
-        <button onClick={handleSubmit} disabled={submitting} style={{ ...submitStyle, background: submitting ? 'var(--gray)' : 'var(--orange)' }}>
+        <SubmitError message={error} />
+        <button type="button" className="btn-primary" onClick={handleSubmit} disabled={submitting}>
           {submitting ? 'Enviando...' : 'Enviar Inspeção'}
         </button>
       </div>
@@ -137,4 +144,4 @@ export default function SafetyInspection() {
 
 const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--gray)', letterSpacing: '0.4px', textTransform: 'uppercase', marginBottom: '6px' }
 const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1.5px solid var(--gray-mid)', fontSize: '14px', color: 'var(--text-dark)', background: '#fff', outline: 'none', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }
-const submitStyle = { width: '100%', marginTop: '16px', padding: '16px', borderRadius: '14px', border: 'none', background: 'var(--orange)', color: '#fff', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 16px rgba(255,94,20,0.35)' }
+const submitStyle = { width: '100%', marginTop: '4px', padding: '16px', borderRadius: '14px', border: 'none', background: 'var(--orange)', color: '#fff', fontSize: '16px', fontWeight: 700, boxShadow: '0 4px 16px rgba(255,94,20,0.35)' }

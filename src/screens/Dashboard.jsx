@@ -1,72 +1,122 @@
 import { useNavigate } from 'react-router-dom'
-import { ShieldAlert, Leaf, Activity, Truck, ArrowLeftRight, Search, ClipboardList, LogOut, ChevronRight, UserCircle } from 'lucide-react'
+import { LogOut, ChevronRight, UserCircle, Mic } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
 import QuickVoiceCapture from '../components/QuickVoiceCapture'
 
 const cards = [
-  { icon: ShieldAlert, label: 'Segurança', sub: 'Registro de Ocorrências', path: '/seguranca', color: '#e53935' },
-  { icon: Leaf, label: 'Ambiental', sub: 'Impacto Ambiental', path: '/ambiental', color: '#43a047' },
-  { icon: Activity, label: 'Ergonomia', sub: 'Risco Ergonômico', path: '/ergonomia', color: '#8e24aa' },
-  { icon: Truck, label: 'Veículo', sub: 'Checklist Diário', path: '/veiculo', color: '#1e88e5' },
-  { icon: ArrowLeftRight, label: 'Passagem de Turno', sub: 'Troca de Turno', path: '/turno', color: '#f57c00' },
-  { icon: Search, label: 'Inspeção', sub: 'Inspeção de Segurança', path: '/inspecao', color: '#00897b' },
+  {
+    key: 'seguranca',
+    label: 'Segurança',
+    sub: 'Registro de ocorrências',
+    path: '/seguranca',
+    icon: '/icons/seguranca.png',
+  },
+  {
+    key: 'ambiental',
+    label: 'Ambiental',
+    sub: 'Impacto ambiental',
+    path: '/ambiental',
+    icon: '/icons/ambiental.png',
+  },
+  {
+    key: 'ergonomia',
+    label: 'Ergonomia',
+    sub: 'Risco ergonômico',
+    path: '/ergonomia',
+    icon: '/icons/ergonomia.png',
+  },
+  {
+    key: 'veiculo',
+    label: 'Veículo',
+    sub: 'Checklist diário',
+    path: '/veiculo',
+    icon: '/icons/veiculo.png',
+  },
+  {
+    key: 'turno',
+    label: 'Passagem de Turno',
+    sub: 'Troca de turno',
+    path: '/turno',
+    icon: '/icons/turno.png',
+  },
+  {
+    key: 'inspecao',
+    label: 'Inspeção',
+    sub: 'Inspeção de segurança',
+    path: '/inspecao',
+    icon: '/icons/inspecao.png',
+  },
 ]
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const { user, signOut } = useAuth()
+  const { signOut } = useAuth()
   const { profile } = useProfile()
-  const today = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const today = new Date().toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
 
   const handleSignOut = async () => {
-    await signOut()
-    navigate('/login')
+    try {
+      await signOut()
+    } finally {
+      navigate('/login')
+    }
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--gray-light)' }}>
-      <header style={{ background: '#1a1a1a', padding: '0' }}>
-        <div style={{ background: 'var(--orange)', height: '3px', width: '100%' }} />
-        <div style={{ padding: '20px 16px 18px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ background: 'var(--orange)', borderRadius: '8px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <ShieldAlert size={18} color="#fff" />
-              </div>
-              <div>
-                <div style={{ color: '#fff', fontWeight: 800, fontSize: '20px', letterSpacing: '-0.3px' }}>SafeMine</div>
-                <div style={{ color: 'var(--orange)', fontSize: '11px', fontWeight: 500 }}>Segurança em Campo</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => navigate('/perfil')}
-                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              >
-                <UserCircle size={18} color="rgba(255,255,255,0.8)" />
-              </button>
-              <button
-                onClick={handleSignOut}
-                style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', padding: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
-              >
-                <LogOut size={14} /> Sair
-              </button>
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="app-header__accent" />
+        <div className="app-header__inner">
+          <div className="app-header__brand">
+            <img
+              src="/icons/logo.png"
+              alt="SafeMine"
+              className="app-header__logo"
+              width={40}
+              height={40}
+            />
+            <div style={{ minWidth: 0 }}>
+              <div className="app-header__title">SafeMine</div>
+              <div className="app-header__sub">Segurança em Campo</div>
             </div>
           </div>
-          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px', marginTop: '10px', textTransform: 'capitalize' }}>{today}</div>
-          <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="app-header__actions">
+            <button
+              type="button"
+              className="icon-btn icon-btn--ghost"
+              onClick={() => navigate('/perfil')}
+              aria-label="Meu perfil"
+            >
+              <UserCircle size={20} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={handleSignOut}
+              aria-label="Sair"
+            >
+              <LogOut size={16} />
+              <span className="icon-btn__label">Sair</span>
+            </button>
+          </div>
+        </div>
+        <div className="app-header__meta">
+          <div className="app-header__date">{today}</div>
+          <div className="app-header__user">
             {profile.nome ? (
               <>
-                <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{profile.nome}</span>
-                {profile.matricula && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}>· Mat. {profile.matricula}</span>}
-                {profile.funcao && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', display: 'none' }}>{profile.funcao}</span>}
+                <span className="app-header__user-name">{profile.nome}</span>
+                {profile.matricula && (
+                  <span className="app-header__user-meta">· Mat. {profile.matricula}</span>
+                )}
               </>
             ) : (
-              <button
-                onClick={() => navigate('/perfil')}
-                style={{ background: 'none', border: 'none', padding: 0, color: 'rgba(255,94,20,0.8)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-              >
+              <button type="button" className="link-cta" onClick={() => navigate('/perfil')}>
                 Preencher perfil para auto-identificação
               </button>
             )}
@@ -74,78 +124,80 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <main style={{ padding: '20px 16px', paddingBottom: '108px' }}>
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ fontSize: '13px', color: 'var(--gray)', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '4px' }}>
-            Registros
-          </div>
-          <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-dark)' }}>O que deseja registrar?</div>
-        </div>
+      <main className="app-main">
+        <div className="section-label">Registros</div>
+        <h1 className="section-title">O que deseja registrar?</h1>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          {cards.map(({ icon: Icon, label, sub, path, color }) => (
+        <div className="card-grid" role="list">
+          {cards.map(({ key, label, sub, path, icon }) => (
             <button
               key={path}
+              type="button"
+              className={`dash-card dash-card--${key}`}
               onClick={() => navigate(path)}
-              style={{ background: '#fff', border: 'none', borderRadius: '16px', padding: '18px 14px', textAlign: 'left', boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', gap: '12px', transition: 'transform 0.15s', position: 'relative', overflow: 'hidden' }}
-              onPointerDown={e => e.currentTarget.style.transform = 'scale(0.97)'}
-              onPointerUp={e => e.currentTarget.style.transform = 'scale(1)'}
-              onPointerLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              role="listitem"
+              aria-label={`${label}: ${sub}`}
             >
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '3px', background: color }} />
-              <div style={{ background: `${color}18`, borderRadius: '10px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon size={20} color={color} />
+              <span className="dash-card__bar" aria-hidden />
+              <div className="dash-card__icon-wrap">
+                <img
+                  src={icon}
+                  alt=""
+                  className="dash-card__icon"
+                  width={56}
+                  height={56}
+                  loading="lazy"
+                />
               </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-dark)', lineHeight: 1.2, marginBottom: '3px' }}>{label}</div>
-                <div style={{ fontSize: '11px', color: 'var(--gray)', lineHeight: 1.3 }}>{sub}</div>
+              <div className="dash-card__body">
+                <div className="dash-card__label">{label}</div>
+                <div className="dash-card__sub">{sub}</div>
               </div>
             </button>
           ))}
         </div>
 
-        {/* Consultar Registros */}
         <button
+          type="button"
+          className="list-cta"
           onClick={() => navigate('/registros')}
-          style={{
-            width: '100%',
-            marginTop: '16px',
-            background: '#1a1a1a',
-            border: 'none',
-            borderRadius: '16px',
-            padding: '16px',
-            boxShadow: 'var(--shadow)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            textAlign: 'left'
-          }}
-          onPointerDown={e => e.currentTarget.style.transform = 'scale(0.98)'}
-          onPointerUp={e => e.currentTarget.style.transform = 'scale(1)'}
-          onPointerLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+          aria-label="Consultar registros enviados"
         >
-          <div style={{ background: 'rgba(255,255,255,0.1)', borderRadius: '10px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <ClipboardList size={20} color="#fff" />
+          <img
+            src="/icons/registros.png"
+            alt=""
+            className="list-cta__icon"
+            width={48}
+            height={48}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="list-cta__title">Consultar Registros</div>
+            <div className="list-cta__sub">Visualize todos os registros enviados</div>
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ color: '#fff', fontWeight: 700, fontSize: '14px', marginBottom: '2px' }}>Consultar Registros</div>
-            <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '12px' }}>Visualize todos os registros enviados</div>
-          </div>
-          <ChevronRight size={18} color="rgba(255,255,255,0.4)" />
+          <ChevronRight size={18} color="var(--gray)" aria-hidden />
         </button>
 
-        {/* Dica de voz */}
-        <div style={{ marginTop: '12px', background: '#fff', borderRadius: '14px', padding: '16px', boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ background: 'var(--orange)', borderRadius: '10px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Activity size={20} color="#fff" />
+        <div className="tip-card">
+          <div className="tip-card__badge" aria-hidden>
+            <Mic size={20} color="#fff" />
           </div>
           <div>
-            <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-dark)' }}>Gravação por voz disponível</div>
-            <div style={{ fontSize: '11px', color: 'var(--gray)', marginTop: '2px', lineHeight: 1.4 }}>Fale para preencher formulários automaticamente com IA</div>
+            <div className="tip-card__title">Gravação por voz com IA</div>
+            <div className="tip-card__sub">
+              Fale o relato — a IA transcreve e preenche os campos automaticamente
+            </div>
           </div>
         </div>
       </main>
+
       <QuickVoiceCapture />
+
+      <style>{`
+        @media (max-width: 380px) {
+          .icon-btn__label { display: none; }
+          .icon-btn { width: var(--touch); padding: 0; }
+        }
+      `}</style>
     </div>
   )
 }

@@ -7,11 +7,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined) // undefined = carregando, null = não logado
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
+    let mounted = true
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (mounted) setUser(session?.user ?? null)
+      })
+      .catch(() => {
+        if (mounted) setUser(null)
+      })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null)
     })
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   return (

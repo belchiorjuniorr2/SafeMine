@@ -1,11 +1,25 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Paperclip, X, FileText } from 'lucide-react'
 
 export default function FileAttach({ files, onChange }) {
   const inputRef = useRef(null)
+  const [previews, setPreviews] = useState([])
+
+  // Create object URLs and revoke on cleanup to avoid memory leaks
+  useEffect(() => {
+    const urls = files.map((file) =>
+      file.type?.startsWith('image/') ? URL.createObjectURL(file) : null
+    )
+    setPreviews(urls)
+    return () => {
+      urls.forEach((url) => {
+        if (url) URL.revokeObjectURL(url)
+      })
+    }
+  }, [files])
 
   const add = (e) => {
-    const next = [...files, ...Array.from(e.target.files)]
+    const next = [...files, ...Array.from(e.target.files || [])]
     onChange(next)
     e.target.value = ''
   }
@@ -17,12 +31,12 @@ export default function FileAttach({ files, onChange }) {
       {files.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
           {files.map((file, i) => {
-            const isImg = file.type.startsWith('image/')
+            const isImg = file.type?.startsWith('image/')
             return (
-              <div key={i} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden', border: '1.5px solid var(--gray-mid)', background: '#f5f5f5', flexShrink: 0 }}>
-                {isImg ? (
+              <div key={`${file.name}-${file.size}-${i}`} style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden', border: '1.5px solid var(--gray-mid)', background: '#f5f5f5', flexShrink: 0 }}>
+                {isImg && previews[i] ? (
                   <img
-                    src={URL.createObjectURL(file)}
+                    src={previews[i]}
                     alt={file.name}
                     style={{ width: '76px', height: '76px', objectFit: 'cover', display: 'block' }}
                   />
@@ -35,7 +49,9 @@ export default function FileAttach({ files, onChange }) {
                   </div>
                 )}
                 <button
+                  type="button"
                   onClick={() => remove(i)}
+                  aria-label={`Remover ${file.name}`}
                   style={{ position: 'absolute', top: '3px', right: '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(0,0,0,0.55)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
                 >
                   <X size={10} color="#fff" />
