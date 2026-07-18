@@ -1,35 +1,62 @@
 /**
  * Vercel Serverless Function — e-mail HTML via Resend.
+ * package.json tem "type": "module", então usamos export default (ESM).
+ *
  * Env: RESEND_API_KEY, REPORT_EMAIL / VITE_REPORT_EMAIL, RESEND_FROM
  */
 
-module.exports = async function handler(req, res) {
-  // CORS preflight
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   if (req.method === 'OPTIONS') {
-    return res.status(204).end()
+    res.statusCode = 204
+    res.end()
+    return
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ ok: false, error: 'Method not allowed' })
+    res.statusCode = 405
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }))
+    return
   }
 
   try {
     const apiKey = process.env.RESEND_API_KEY
     if (!apiKey) {
-      return res.status(500).json({ ok: false, error: 'RESEND_API_KEY não configurada no servidor' })
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ ok: false, error: 'RESEND_API_KEY não configurada no servidor' }))
+      return
     }
 
-    // Vercel já faz parse de JSON em req.body
     let body = req.body
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body || '{}')
       } catch {
-        return res.status(400).json({ ok: false, error: 'JSON inválido' })
+        res.statusCode = 400
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ ok: false, error: 'JSON inválido' }))
+        return
+      }
+    }
+    // Se body vazio, tenta ler stream (fallback)
+    if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      const raw = Buffer.concat(chunks).toString('utf8')
+      if (raw) {
+        try {
+          body = JSON.parse(raw)
+        } catch {
+          res.statusCode = 400
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: false, error: 'JSON inválido' }))
+          return
+        }
       }
     }
     body = body || {}
@@ -43,7 +70,10 @@ module.exports = async function handler(req, res) {
     const from = process.env.RESEND_FROM || 'SafeMine <onboarding@resend.dev>'
 
     if (!subject || !html) {
-      return res.status(400).json({ ok: false, error: 'subject e html são obrigatórios' })
+      res.statusCode = 400
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ ok: false, error: 'subject e html são obrigatórios' }))
+      return
     }
 
     const payload = {
@@ -70,20 +100,22 @@ module.exports = async function handler(req, res) {
         (typeof data?.error === 'string' && data.error) ||
         data?.error?.message ||
         `Resend ${r.status}`
-      return res.status(r.status).json({ ok: false, error: msg })
+      res.statusCode = r.status
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ ok: false, error: msg }))
+      return
     }
 
-    return res.status(200).json({
-      ok: true,
-      provider: 'resend',
-      id: data.id,
-      to: dest,
-    })
+    res.statusCode = 200
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ ok: true, provider: 'resend', id: data.id, to: dest }))
   } catch (err) {
     console.error('[send-report-email]', err)
-    return res.status(500).json({
+    res.statusCode = 500
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({
       ok: false,
       error: err?.message || 'Erro interno no envio de e-mail',
-    })
+    }))
   }
 }
