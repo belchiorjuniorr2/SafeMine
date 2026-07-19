@@ -112,11 +112,24 @@ Integração via **Z-API** + webhook Vercel (`/api/whatsapp-webhook`).
 - `sql/whatsapp_mvp.sql` · `sql/whatsapp_rls_fix.sql` · `sql/whatsapp_userid_fix.sql`  
 - `docs/WHATSAPP_MVP.md` — setup operacional Z-API / Supabase  
 
-### 3.3 Rádio (produto / roadmap)
+### 3.3 Rádio digital (ingest genérico)
 
-Posicionamento: canal de campo onde o celular é restrito.  
-Na landing, aparece como terceiro canal que **converge** no mesmo sistema.  
-Implementação de captura de rádio digital ainda não é o núcleo do MVP atual.
+Áudio sai do **rádio digital** → fica no **servidor do rádio** → o servidor (ou um middleware) faz **POST** no SafeMine.
+
+```
+PTT rádio → servidor grava .wav/.ogg
+         → POST /api/radio-ingest { audioUrl | audioBase64, radioId, … }
+         → STT + classificação
+         → registros (canal = radio) + e-mail SSMA
+         → resposta { numero: "SM-…" }
+```
+
+- Endpoint: `api/radio-ingest.js`  
+- Pipeline: `api/voicePipeline.js`  
+- SQL: `sql/radio_ingest.sql`  
+- Doc operacional: `docs/RADIO_INGEST.md`  
+
+Mapeamento opcional `radioId → matrícula` em `radio_unidades` ou env `RADIO_UNIT_MAP`.
 
 ---
 
