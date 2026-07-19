@@ -24,6 +24,12 @@ import {
   buildDraftSummaryMessage,
   WA_STATES,
 } from '../src/lib/waDraftMachine.js'
+import {
+  mergeSessionWithMemory,
+  sessionPayloadWithDraft,
+  resolveDraftRefs,
+  pickDraftFields,
+} from '../src/lib/waDraftPersist.js'
 
 const ZAPI_BASE = 'https://api.z-api.io'
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
@@ -377,75 +383,124 @@ async function zapiSendText(phone, message) {
 // ─── sessão ────────────────────────────────────────────────
 
 async function getSession(phone) {
+  let dbSession = null
   // 1) RPC security definer (funciona com anon)
   try {
     const rows = await sbRpc('wa_get_session', { p_phone: phone })
     const s = Array.isArray(rows) ? rows[0] : rows
-    if (s && s.phone) return s
+    if (s && s.phone) dbSession = s
   } catch (e) {
     console.warn('[getSession rpc]', e.message)
   }
   // 2) REST direto
-  try {
-    const rows = await sb(
-      `whatsapp_sessions?phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`,
-    )
-    const s = Array.isArray(rows) ? rows[0] : null
-    if (s) {
-      if (s.expires_at && new Date(s.expires_at) < new Date()) {
-        await clearSession(phone)
-        return null
+  if (!dbSession) {
+    try {
+      const rows = await sb(
+        `whatsapp_sessions?phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`,
+      )
+      const s = Array.isArray(rows) ? rows[0] : null
+      if (s) {
+        if (s.expires_at && new Date(s.expires_at) < new Date()) {
+          await clearSession(phone)
+          return null
+        }
+        dbSession = s
       }
-      return s
+    } catch (e) {
+      console.warn('[getSession rest]', e.message)
     }
-  } catch (e) {
-    console.warn('[getSession rest]', e.message)
   }
   // 3) memória
   const mem = memorySessions.get(phone)
-  if (!mem) return null
-  if (mem.expires_at && new Date(mem.expires_at) < new Date()) {
+  if (mem?.expires_at && new Date(mem.expires_at) < new Date()) {
     memorySessions.delete(phone)
+  }
+  const memLive = memorySessions.get(phone) || null
+
+  const merged = mergeSessionWithMemory(dbSession, memLive)
+  if (!merged) return null
+  if (merged.expires_at && new Date(merged.expires_at) < new Date()) {
+    await clearSession(phone)
     return null
   }
-  return mem
+  return merged
 }
 
 async function upsertSession(phone, patch) {
   const expires = new Date(Date.now() + SESSION_DAYS * 864e5).toISOString()
-  const row = {
-    phone,
-    state: patch.state || STATES.NEED_MATRICULA,
-    pending_matricula: patch.pending_matricula ?? null,
-    user_id: patch.user_id ?? null,
-    nome: patch.nome ?? null,
-    matricula: patch.matricula ?? null,
-    funcao: patch.funcao ?? null,
-    updated_at: new Date().toISOString(),
-    expires_at: expires,
-    ...patch,
-  }
-  memorySessions.set(phone, row)
-  // RPC security definer
-  const ok = await sbRpc('wa_upsert_session', {
-    p: {
-      phone: row.phone,
-      state: row.state,
-      pending_matricula: row.pending_matricula,
-      user_id: row.user_id || null,
-      nome: row.nome,
-      matricula: row.matricula,
-      funcao: row.funcao,
-      updated_at: row.updated_at,
-      expires_at: row.expires_at,
+  const prev = memorySessions.get(phone) || {}
+  const draft = pickDraftFields({ ...prev, ...patch })
+  const row = sessionPayloadWithDraft(
+    {
+      phone,
+      state: patch.state || prev.state || STATES.NEED_MATRICULA,
+      pending_matricula:
+        patch.pending_matricula !== undefined
+          ? patch.pending_matricula
+          : prev.pending_matricula ?? null,
+      user_id: patch.user_id !== undefined ? patch.user_id : prev.user_id ?? null,
+      nome: patch.nome !== undefined ? patch.nome : prev.nome ?? null,
+      matricula: patch.matricula !== undefined ? patch.matricula : prev.matricula ?? null,
+      funcao: patch.funcao !== undefined ? patch.funcao : prev.funcao ?? null,
+      updated_at: new Date().toISOString(),
+      expires_at: expires,
     },
+    // clear draft when explicitly null
+    {
+      draft_id:
+        patch.draft_id === null
+          ? null
+          : patch.draft_id !== undefined
+            ? patch.draft_id
+            : draft.draft_id,
+      draft_numero:
+        patch.draft_numero === null
+          ? null
+          : patch.draft_numero !== undefined
+            ? patch.draft_numero
+            : draft.draft_numero,
+      draft_tipo:
+        patch.draft_tipo === null
+          ? null
+          : patch.draft_tipo !== undefined
+            ? patch.draft_tipo
+            : draft.draft_tipo,
+      draft_summary:
+        patch.draft_summary === null
+          ? null
+          : patch.draft_summary !== undefined
+            ? patch.draft_summary
+            : draft.draft_summary,
+    },
+  )
+  // also keep non-persisted draft_dados in memory only
+  memorySessions.set(phone, {
+    ...row,
+    draft_dados: patch.draft_dados !== undefined ? patch.draft_dados : prev.draft_dados,
   })
+
+  const rpcPayload = {
+    phone: row.phone,
+    state: row.state,
+    pending_matricula: row.pending_matricula,
+    user_id: row.user_id || null,
+    nome: row.nome,
+    matricula: row.matricula,
+    funcao: row.funcao,
+    draft_id: row.draft_id || null,
+    draft_numero: row.draft_numero || null,
+    draft_tipo: row.draft_tipo || null,
+    draft_summary: row.draft_summary || null,
+    updated_at: row.updated_at,
+    expires_at: row.expires_at,
+  }
+
+  const ok = await sbRpc('wa_upsert_session', { p: rpcPayload })
   if (ok === null) {
-    // fallback REST (pode falhar por RLS)
     try {
       await sb('whatsapp_sessions', {
         method: 'POST',
-        body: row,
+        body: rpcPayload,
         headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       })
     } catch (e) {
@@ -453,6 +508,28 @@ async function upsertSession(phone, patch) {
     }
   }
   return row
+}
+
+/** Busca rascunhos recentes do telefone em registros (recovery cross-instance). */
+async function fetchDraftRegistrosForPhone(phone) {
+  try {
+    // busca recentes e filtra por _wa_phone + rascunho (JSON filter limitado no PostgREST)
+    const rows = await sb(
+      `registros?select=id,numero,tipo,dados,created_at&order=created_at.desc&limit=20`,
+    )
+    const list = Array.isArray(rows) ? rows : []
+    return list.filter((r) => {
+      const d = r.dados || {}
+      const isDraft = d._status === 'rascunho' || d._draft === true
+      if (!isDraft) return false
+      if (d._wa_phone && String(d._wa_phone) !== String(phone)) return false
+      if (d._canal && d._canal !== 'whatsapp') return false
+      return true
+    })
+  } catch (e) {
+    console.warn('[fetchDraftRegistros]', e.message)
+    return []
+  }
 }
 
 async function clearSession(phone) {
@@ -1107,22 +1184,13 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
   })
 
   const draftId = saved?.row?.id || null
+  // Persiste draft_id/numero/summary no Supabase (sobrevive a cold start serverless)
   await upsertSession(phone, {
     state: STATES.CONFIRM_DRAFT,
     nome: session.nome,
     matricula: session.matricula,
     funcao: session.funcao,
     user_id: session.user_id,
-    draft_id: draftId,
-    draft_numero: saved.numero || numero,
-    draft_tipo: tipo,
-    draft_summary: summary,
-  })
-  // memory only fields for draft
-  const mem = memorySessions.get(phone) || {}
-  memorySessions.set(phone, {
-    ...mem,
-    state: STATES.CONFIRM_DRAFT,
     draft_id: draftId,
     draft_numero: saved.numero || numero,
     draft_tipo: tipo,
@@ -1138,17 +1206,24 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
     tipo,
     draft: true,
     finalized: false,
+    draft_id: draftId,
   }
 }
 
-async function finalizeWhatsAppDraft(phone, session) {
-  const mem = memorySessions.get(phone) || session
-  const numero = mem.draft_numero || session.draft_numero
-  const tipo = mem.draft_tipo || session.draft_tipo || 'seguranca'
-  const draftId = mem.draft_id || session.draft_id
-  let dados = mem.draft_dados
+async function resolveDraftForPhone(phone, session) {
+  const mem = memorySessions.get(phone) || {}
+  const merged = mergeSessionWithMemory(session, mem) || session || {}
+  let refs = resolveDraftRefs({ ...merged, phone }, [])
+  if (!refs?.draft_id && !refs?.draft_numero) {
+    const rows = await fetchDraftRegistrosForPhone(phone)
+    refs = resolveDraftRefs({ ...merged, phone }, rows)
+  }
+  return { refs, mem, merged }
+}
 
-  if (!numero && !draftId) {
+async function finalizeWhatsAppDraft(phone, session) {
+  const { refs, mem } = await resolveDraftForPhone(phone, session)
+  if (!refs || (!refs.draft_id && !refs.draft_numero)) {
     await zapiSendText(phone, 'Não há rascunho pendente. Envie um áudio de relato.')
     await upsertSession(phone, {
       state: STATES.READY,
@@ -1156,9 +1231,19 @@ async function finalizeWhatsAppDraft(phone, session) {
       matricula: session.matricula,
       funcao: session.funcao,
       user_id: session.user_id,
+      draft_id: null,
+      draft_numero: null,
+      draft_tipo: null,
+      draft_summary: null,
+      draft_dados: null,
     })
     return { ok: false, action: 'no_draft' }
   }
+
+  const numero = refs.draft_numero
+  const tipo = refs.draft_tipo || mem.draft_tipo || session.draft_tipo || 'seguranca'
+  const draftId = refs.draft_id
+  let dados = refs.dados || mem.draft_dados
 
   try {
     // promove rascunho → novo (final)
@@ -1207,22 +1292,27 @@ async function finalizeWhatsAppDraft(phone, session) {
     const local = dados?.local || dados?.area_inspecionada || ''
     await zapiSendText(phone, MSG.done(numero, TIPO_LABEL[tipo] || tipo, local))
 
-    memorySessions.set(phone, {
-      ...(memorySessions.get(phone) || {}),
-      state: STATES.READY,
-      draft_id: null,
-      draft_numero: null,
-      draft_dados: null,
-      draft_summary: null,
-    })
     await upsertSession(phone, {
       state: STATES.READY,
       nome: session.nome,
       matricula: session.matricula,
       funcao: session.funcao,
       user_id: session.user_id,
+      draft_id: null,
+      draft_numero: null,
+      draft_tipo: null,
+      draft_summary: null,
+      draft_dados: null,
     })
-    return { ok: true, action: 'registered', numero, tipo, draft: false, finalized: true }
+    return {
+      ok: true,
+      action: 'registered',
+      numero,
+      tipo,
+      draft: false,
+      finalized: true,
+      recoveredFrom: refs.source,
+    }
   } catch (e) {
     console.error('[finalize draft]', e)
     await zapiSendText(phone, MSG.error)
@@ -1231,9 +1321,9 @@ async function finalizeWhatsAppDraft(phone, session) {
 }
 
 async function discardWhatsAppDraft(phone, session) {
-  const mem = memorySessions.get(phone) || session
-  const draftId = mem.draft_id || session.draft_id
-  const numero = mem.draft_numero || session.draft_numero
+  const { refs } = await resolveDraftForPhone(phone, session)
+  const draftId = refs?.draft_id
+  const numero = refs?.draft_numero
   try {
     if (draftId) {
       await sb(`registros?id=eq.${encodeURIComponent(draftId)}`, { method: 'DELETE' })
@@ -1243,20 +1333,17 @@ async function discardWhatsAppDraft(phone, session) {
   } catch (e) {
     console.warn('[discard draft]', e.message)
   }
-  memorySessions.set(phone, {
-    ...(memorySessions.get(phone) || {}),
-    state: STATES.READY,
-    draft_id: null,
-    draft_numero: null,
-    draft_dados: null,
-    draft_summary: null,
-  })
   await upsertSession(phone, {
     state: STATES.READY,
     nome: session.nome,
     matricula: session.matricula,
     funcao: session.funcao,
     user_id: session.user_id,
+    draft_id: null,
+    draft_numero: null,
+    draft_tipo: null,
+    draft_summary: null,
+    draft_dados: null,
   })
   await zapiSendText(
     phone,
