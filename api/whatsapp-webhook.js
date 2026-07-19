@@ -17,6 +17,8 @@
  *  ZAPI_SELF_PHONE (opcional) — se connectedPhone não vier no webhook
  */
 
+import { buildReportEmailHtml, tipoLabel as emailTipoLabel } from './emailTemplate.js'
+
 const ZAPI_BASE = 'https://api.z-api.io'
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 const SESSION_DAYS = 7
@@ -595,19 +597,25 @@ async function saveRegistro({ tipo, dados, userId, userEmail, numero }) {
 
 async function maybeSendEmail({ tipo, dados, numero }) {
   const apiKey = env('RESEND_API_KEY')
-  if (!apiKey) return
+  if (!apiKey) {
+    console.warn('[email whatsapp] RESEND_API_KEY ausente')
+    return { ok: false, error: 'no_key' }
+  }
   const to = env('REPORT_EMAIL') || env('VITE_REPORT_EMAIL') || 'belchiorjuniorrr@gmail.com'
   const from = env('RESEND_FROM') || 'SafeMine <onboarding@resend.dev>'
-  const subject = `[SafeMine WhatsApp] ${numero} · ${tipo}`
-  const html = `
-    <h2>Novo relato via WhatsApp</h2>
-    <p><strong>Número:</strong> ${numero}</p>
-    <p><strong>Tipo:</strong> ${tipo}</p>
-    <p><strong>Relator:</strong> ${dados.nome || '—'} · Mat. ${dados.matricula || '—'}</p>
-    <pre style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:8px">${JSON.stringify(dados, null, 2)}</pre>
-  `
+  const createdAt = new Date().toISOString()
+  const tipoLbl = emailTipoLabel(tipo)
+  const subject = `SafeMine · ${tipoLbl} · ${numero || dados?.nome || 'WhatsApp'}`
+  const html = buildReportEmailHtml({
+    tipo,
+    dados,
+    userEmail: dados?._wa_phone ? `WhatsApp ${dados._wa_phone}` : undefined,
+    createdAt,
+    numero,
+    canal: 'whatsapp',
+  })
   try {
-    await fetch('https://api.resend.com/emails', {
+    const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -615,8 +623,15 @@ async function maybeSendEmail({ tipo, dados, numero }) {
       },
       body: JSON.stringify({ from, to: [to], subject, html }),
     })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      console.warn('[email whatsapp] resend', r.status, body)
+      return { ok: false, error: body?.message || `Resend ${r.status}` }
+    }
+    return { ok: true, id: body.id, to }
   } catch (e) {
     console.warn('[email whatsapp]', e.message)
+    return { ok: false, error: e.message }
   }
 }
 
