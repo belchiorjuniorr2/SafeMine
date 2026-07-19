@@ -12,6 +12,7 @@ import Success from './screens/Success'
 import Login from './screens/Login'
 import Records from './screens/Records'
 import Profile from './screens/Profile'
+import Gestao from './screens/Gestao'
 
 function ProtectedRoute({ children }) {
   const { user } = useAuth()
@@ -45,6 +46,7 @@ function AppRoutes() {
       <Route path="/inspecao" element={<ProtectedRoute><SafetyInspection /></ProtectedRoute>} />
       <Route path="/sucesso" element={<ProtectedRoute><Success /></ProtectedRoute>} />
       <Route path="/registros" element={<ProtectedRoute><Records /></ProtectedRoute>} />
+      <Route path="/gestao" element={<ProtectedRoute><Gestao /></ProtectedRoute>} />
       <Route path="/perfil" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

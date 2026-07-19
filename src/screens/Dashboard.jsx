@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { LogOut, ChevronRight, UserCircle, Mic } from 'lucide-react'
+import { LogOut, ChevronRight, UserCircle, Mic, LayoutDashboard } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
 import QuickVoiceCapture from '../components/QuickVoiceCapture'
@@ -119,6 +119,27 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
+
+        <button
+          type="button"
+          className="list-cta"
+          onClick={() => navigate('/gestao')}
+          aria-label="Painel de gestão SSMA"
+        >
+          <TypeIcon
+            Icon={LayoutDashboard}
+            color="#FF8A45"
+            colorSoft="#FFF4EC"
+            gradient="linear-gradient(145deg, #FFB074 0%, #F07830 100%)"
+            shadow="rgba(240, 120, 48, 0.28)"
+            size={48}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="list-cta__title">Gestão SSMA</div>
+            <div className="list-cta__sub">Gráficos, indicadores e relatórios</div>
+          </div>
+          <ChevronRight size={18} color="var(--gray)" aria-hidden />
+        </button>
 
         <button
           type="button"
