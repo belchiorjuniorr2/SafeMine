@@ -1,0 +1,184 @@
+-- SafeMine · corrige gravação do WhatsApp sem service_role
+-- Rode no SQL Editor do Supabase (uma vez).
+
+-- 1) Garante tabelas do MVP
+create table if not exists public.whatsapp_sessions (
+  phone text primary key,
+  state text not null default 'need_matricula',
+  pending_matricula text,
+  user_id uuid,
+  nome text,
+  matricula text,
+  funcao text,
+  updated_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '7 days')
+);
+
+create table if not exists public.colaboradores (
+  matricula text primary key,
+  nome text not null,
+  funcao text,
+  user_id uuid,
+  ativo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+-- 2) Colunas extras em registros (se ainda não existirem)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'registros' and column_name = 'numero'
+  ) then
+    alter table public.registros add column numero text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'registros' and column_name = 'canal'
+  ) then
+    alter table public.registros add column canal text default 'app';
+  end if;
+end $$;
+
+create sequence if not exists public.relato_numero_seq;
+
+create or replace function public.next_relato_numero()
+returns text
+language sql
+security definer
+set search_path = public
+as $$
+  select 'SM-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.relato_numero_seq')::text, 5, '0');
+$$;
+
+grant execute on function public.next_relato_numero() to anon, authenticated, service_role;
+
+-- 3) RPC: upsert sessão (bypassa RLS)
+create or replace function public.wa_upsert_session(p jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.whatsapp_sessions as s (
+    phone, state, pending_matricula, user_id, nome, matricula, funcao, updated_at, expires_at
+  ) values (
+    p->>'phone',
+    coalesce(p->>'state', 'need_matricula'),
+    p->>'pending_matricula',
+    nullif(p->>'user_id', '')::uuid,
+    p->>'nome',
+    p->>'matricula',
+    p->>'funcao',
+    coalesce((p->>'updated_at')::timestamptz, now()),
+    coalesce((p->>'expires_at')::timestamptz, now() + interval '7 days')
+  )
+  on conflict (phone) do update set
+    state = excluded.state,
+    pending_matricula = excluded.pending_matricula,
+    user_id = excluded.user_id,
+    nome = excluded.nome,
+    matricula = excluded.matricula,
+    funcao = excluded.funcao,
+    updated_at = excluded.updated_at,
+    expires_at = excluded.expires_at;
+end;
+$$;
+
+grant execute on function public.wa_upsert_session(jsonb) to anon, authenticated, service_role;
+
+-- 4) RPC: get sessão
+create or replace function public.wa_get_session(p_phone text)
+returns setof public.whatsapp_sessions
+language sql
+security definer
+set search_path = public
+as $$
+  select * from public.whatsapp_sessions
+  where phone = p_phone
+    and expires_at > now()
+  limit 1;
+$$;
+
+grant execute on function public.wa_get_session(text) to anon, authenticated, service_role;
+
+-- 5) RPC: clear sessão
+create or replace function public.wa_clear_session(p_phone text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.whatsapp_sessions where phone = p_phone;
+$$;
+
+grant execute on function public.wa_clear_session(text) to anon, authenticated, service_role;
+
+-- 6) RPC: buscar colaborador
+create or replace function public.wa_find_colaborador(p_matricula text)
+returns table (matricula text, nome text, funcao text, user_id uuid)
+language sql
+security definer
+set search_path = public
+as $$
+  select c.matricula, c.nome, c.funcao, c.user_id
+  from public.colaboradores c
+  where upper(trim(c.matricula)) = upper(trim(p_matricula))
+    and c.ativo = true
+  limit 1;
+$$;
+
+grant execute on function public.wa_find_colaborador(text) to anon, authenticated, service_role;
+
+-- 7) RPC: inserir relato WhatsApp (bypassa RLS de registros)
+create or replace function public.wa_insert_registro(
+  p_tipo text,
+  p_dados jsonb,
+  p_numero text,
+  p_user_id uuid default null,
+  p_user_email text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+  v_numero text := coalesce(nullif(p_numero, ''), 'SM-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.relato_numero_seq')::text, 5, '0'));
+begin
+  insert into public.registros (tipo, dados, user_id, user_email, numero, canal)
+  values (
+    p_tipo,
+    p_dados,
+    p_user_id,
+    p_user_email,
+    v_numero,
+    'whatsapp'
+  )
+  returning id into v_id;
+
+  return jsonb_build_object('ok', true, 'id', v_id, 'numero', v_numero);
+exception
+  when undefined_column then
+    -- schema antigo sem numero/canal
+    insert into public.registros (tipo, dados, user_id, user_email)
+    values (
+      p_tipo,
+      p_dados || jsonb_build_object('_numero', v_numero, '_canal', 'whatsapp'),
+      p_user_id,
+      p_user_email
+    )
+    returning id into v_id;
+    return jsonb_build_object('ok', true, 'id', v_id, 'numero', v_numero);
+end;
+$$;
+
+grant execute on function public.wa_insert_registro(text, jsonb, text, uuid, text) to anon, authenticated, service_role;
+
+-- 8) Matrícula de teste
+insert into public.colaboradores (matricula, nome, funcao)
+values ('50349', 'José Belchior P. Junior', 'Técnico de Segurança')
+on conflict (matricula) do update
+  set nome = excluded.nome, funcao = excluded.funcao, ativo = true;

@@ -148,8 +148,12 @@ async function sb(path, { method = 'GET', body, headers = {} } = {}) {
   return data
 }
 
-async function sbRpc(fn, args = {}) {
+async function sbRpc(fn, args = {}, { throwOnError = false } = {}) {
   const { url, key } = supabaseConfig()
+  if (!url || !key) {
+    if (throwOnError) throw new Error('Supabase não configurado')
+    return null
+  }
   const r = await fetch(`${url}/rest/v1/rpc/${fn}`, {
     method: 'POST',
     headers: {
@@ -167,10 +171,39 @@ async function sbRpc(fn, args = {}) {
     data = text
   }
   if (!r.ok) {
-    // fallback se a function não existir
+    const msg =
+      (typeof data === 'object' && (data?.message || data?.error || data?.hint)) ||
+      text ||
+      `RPC ${fn} ${r.status}`
+    console.warn(`[rpc ${fn}]`, r.status, msg)
+    if (throwOnError) throw new Error(String(msg))
     return null
   }
   return data
+}
+
+/** Detecta eco das próprias respostas do bot (Z-API às vezes manda fromMe sem fromApi). */
+function looksLikeBotMessage(text) {
+  const t = String(text || '').trim()
+  if (!t) return false
+  const starts = [
+    'Olá! Sou o *SafeMine*',
+    'Olá! Sou o SafeMine',
+    'Confirme seus dados',
+    '✅ Matrícula confirmada',
+    '✅ Relato *',
+    '✅ Relato ',
+    '⏳ Recebi o áudio',
+    'Não encontrei a matrícula',
+    'Não consegui entender o áudio',
+    'Ocorreu um erro ao processar',
+    'Sessão encerrada',
+    'Agora envie o *áudio',
+    'Antes de enviar o áudio',
+    'Ok. Digite sua',
+    'Ainda preciso da confirmação',
+  ]
+  return starts.some((s) => t.startsWith(s) || t.includes('Sou o *SafeMine*'))
 }
 
 // ─── Z-API ─────────────────────────────────────────────────
@@ -204,30 +237,38 @@ async function zapiSendText(phone, message) {
 // ─── sessão ────────────────────────────────────────────────
 
 async function getSession(phone) {
+  // 1) RPC security definer (funciona com anon)
+  try {
+    const rows = await sbRpc('wa_get_session', { p_phone: phone })
+    const s = Array.isArray(rows) ? rows[0] : rows
+    if (s && s.phone) return s
+  } catch (e) {
+    console.warn('[getSession rpc]', e.message)
+  }
+  // 2) REST direto
   try {
     const rows = await sb(
       `whatsapp_sessions?phone=eq.${encodeURIComponent(phone)}&select=*&limit=1`,
     )
     const s = Array.isArray(rows) ? rows[0] : null
-    if (!s) {
-      const mem = memorySessions.get(phone)
-      if (!mem) return null
-      if (mem.expires_at && new Date(mem.expires_at) < new Date()) {
-        memorySessions.delete(phone)
+    if (s) {
+      if (s.expires_at && new Date(s.expires_at) < new Date()) {
+        await clearSession(phone)
         return null
       }
-      return mem
+      return s
     }
-    if (s.expires_at && new Date(s.expires_at) < new Date()) {
-      await clearSession(phone)
-      return null
-    }
-    return s
   } catch (e) {
-    console.warn('[getSession]', e.message)
-    const mem = memorySessions.get(phone)
-    return mem || null
+    console.warn('[getSession rest]', e.message)
   }
+  // 3) memória
+  const mem = memorySessions.get(phone)
+  if (!mem) return null
+  if (mem.expires_at && new Date(mem.expires_at) < new Date()) {
+    memorySessions.delete(phone)
+    return null
+  }
+  return mem
 }
 
 async function upsertSession(phone, patch) {
@@ -235,51 +276,54 @@ async function upsertSession(phone, patch) {
   const row = {
     phone,
     state: patch.state || STATES.NEED_MATRICULA,
+    pending_matricula: patch.pending_matricula ?? null,
+    user_id: patch.user_id ?? null,
+    nome: patch.nome ?? null,
+    matricula: patch.matricula ?? null,
+    funcao: patch.funcao ?? null,
     updated_at: new Date().toISOString(),
     expires_at: expires,
     ...patch,
   }
   memorySessions.set(phone, row)
-  try {
-    const existing = await getSessionRaw(phone)
-    if (existing) {
-      await sb(`whatsapp_sessions?phone=eq.${encodeURIComponent(phone)}`, {
-        method: 'PATCH',
-        body: row,
-        headers: { Prefer: 'return=minimal' },
-      })
-    } else {
+  // RPC security definer
+  const ok = await sbRpc('wa_upsert_session', {
+    p: {
+      phone: row.phone,
+      state: row.state,
+      pending_matricula: row.pending_matricula,
+      user_id: row.user_id || null,
+      nome: row.nome,
+      matricula: row.matricula,
+      funcao: row.funcao,
+      updated_at: row.updated_at,
+      expires_at: row.expires_at,
+    },
+  })
+  if (ok === null) {
+    // fallback REST (pode falhar por RLS)
+    try {
       await sb('whatsapp_sessions', {
         method: 'POST',
         body: row,
-        headers: { Prefer: 'return=minimal' },
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       })
+    } catch (e) {
+      console.warn('[upsertSession] memory only:', e.message)
     }
-  } catch (e) {
-    console.warn('[upsertSession] using memory only:', e.message)
   }
   return row
 }
 
-async function getSessionRaw(phone) {
-  try {
-    const rows = await sb(
-      `whatsapp_sessions?phone=eq.${encodeURIComponent(phone)}&select=phone&limit=1`,
-    )
-    return Array.isArray(rows) ? rows[0] : null
-  } catch {
-    return null
-  }
-}
-
 async function clearSession(phone) {
   memorySessions.delete(phone)
+  await sbRpc('wa_clear_session', { p_phone: phone })
   try {
     await sb(`whatsapp_sessions?phone=eq.${encodeURIComponent(phone)}`, {
       method: 'DELETE',
     })
   } catch (e) {
-    console.warn('[clearSession]', e.message)
+    /* ok */
   }
 }
 
@@ -289,7 +333,23 @@ async function findColaboradorByMatricula(matricula) {
   const mat = normalizeMatricula(matricula)
   if (!mat) return null
 
-  // 1) tabela colaboradores
+  // 1) RPC security definer
+  try {
+    const rows = await sbRpc('wa_find_colaborador', { p_matricula: mat })
+    const c = Array.isArray(rows) ? rows[0] : rows
+    if (c && (c.matricula || c.nome)) {
+      return {
+        matricula: c.matricula || mat,
+        nome: c.nome,
+        funcao: c.funcao || '',
+        user_id: c.user_id || null,
+      }
+    }
+  } catch (e) {
+    console.warn('[colaboradores rpc]', e.message)
+  }
+
+  // 2) tabela colaboradores (REST)
   try {
     const rows = await sb(
       `colaboradores?matricula=eq.${encodeURIComponent(mat)}&ativo=eq.true&select=*&limit=1`,
@@ -475,6 +535,27 @@ async function nextNumero() {
 }
 
 async function saveRegistro({ tipo, dados, userId, userEmail, numero }) {
+  // Prefer RPC security definer (funciona com anon + RLS)
+  const rpc = await sbRpc(
+    'wa_insert_registro',
+    {
+      p_tipo: tipo,
+      p_dados: dados,
+      p_numero: numero,
+      p_user_id: userId || null,
+      p_user_email: userEmail || null,
+    },
+    { throwOnError: false },
+  )
+  if (rpc && (rpc.ok || rpc.numero || rpc.id)) {
+    return {
+      ok: true,
+      row: rpc,
+      numero: rpc.numero || numero,
+    }
+  }
+
+  // Fallback REST (precisa service_role ou policy)
   const row = {
     tipo,
     dados,
@@ -491,7 +572,6 @@ async function saveRegistro({ tipo, dados, userId, userEmail, numero }) {
     })
     return { ok: true, row: Array.isArray(inserted) ? inserted[0] : inserted, numero }
   } catch (e) {
-    // se colunas numero/canal não existirem, tenta sem elas
     if (String(e.message).includes('numero') || String(e.message).includes('canal')) {
       const fallback = {
         tipo,
@@ -506,7 +586,10 @@ async function saveRegistro({ tipo, dados, userId, userEmail, numero }) {
       })
       return { ok: true, row: Array.isArray(inserted) ? inserted[0] : inserted, numero }
     }
-    throw e
+    throw new Error(
+      e.message +
+        ' — rode sql/whatsapp_rls_fix.sql no Supabase (RPC wa_insert_registro).',
+    )
   }
 }
 
@@ -585,7 +668,7 @@ async function handleIncoming(payload) {
     return { ignored: true, reason: 'type' }
   }
 
-  // Mensagens enviadas pela API (send-text) — não reprocessar como se fossem do usuário
+  // Mensagens enviadas pela API (send-text) — não reprocessar
   if (payload.fromApi) return { ignored: true, reason: 'fromApi' }
 
   const isFromMe = !!payload.fromMe
@@ -596,25 +679,27 @@ async function handleIncoming(payload) {
     return { ignored: true, reason: 'external_disabled' }
   }
 
-  // só texto e áudio
-  // fromMe: phone no webhook é o contato do chat; para o MVP de teste
-  // tratamos o dono da instância (connectedPhone) como o "operador" e
-  // respondemos nele — assim você usa só o chip da Z-API.
-  let phone = normalizePhone(payload.phone)
-  if (isFromMe) {
-    const selfPhone =
-      normalizePhone(payload.connectedPhone) ||
-      normalizePhone(env('ZAPI_SELF_PHONE')) ||
-      phone
-    phone = selfPhone || 'self'
-  }
-  if (!phone) return { ignored: true, reason: 'no_phone' }
-
   const text =
     payload.text?.message ||
     payload.buttonsResponseMessage?.message ||
     payload.listResponseMessage?.message ||
     ''
+
+  // Eco do próprio bot (fromMe sem fromApi)
+  if (text && looksLikeBotMessage(text)) {
+    return { ignored: true, reason: 'bot_echo' }
+  }
+
+  // fromMe: sempre sessão no número da instância (connectedPhone).
+  // payload.phone em fromMe pode ser LID (@lid) ou o contato do chat.
+  let phone = normalizePhone(payload.connectedPhone) || normalizePhone(env('ZAPI_SELF_PHONE'))
+  if (!phone) {
+    // só usa phone do payload se parecer E.164 BR (10–13 dígitos começando com 55)
+    const raw = normalizePhone(payload.phone)
+    if (raw && raw.length >= 10 && raw.length <= 13) phone = raw
+  }
+  if (!phone) phone = 'self'
+
   const hasAudio = !!(payload.audio?.audioUrl)
   const audioUrl = payload.audio?.audioUrl
   const audioMime = payload.audio?.mimeType
@@ -790,7 +875,11 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
     })
   } catch (e) {
     console.error('[saveRegistro]', e)
-    await zapiSendText(phone, MSG.error)
+    const hint = String(e.message || '').slice(0, 180)
+    await zapiSendText(
+      phone,
+      `${MSG.error}\n\n_Detalhe: ${hint}_`,
+    )
     return { ok: false, action: 'save_fail', error: e.message }
   }
 
