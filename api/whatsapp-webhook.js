@@ -67,6 +67,55 @@ function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '')
 }
 
+/** Data/hora no fuso do Brasil (Vercel roda em UTC). */
+const TZ_BR = 'America/Sao_Paulo'
+
+function nowInBrazil() {
+  const now = new Date()
+  const data = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TZ_BR,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(now)
+  const hora = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TZ_BR,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(now)
+  return { data, hora, iso: now.toISOString() }
+}
+
+function formatBrazilDateTime(isoOrDate) {
+  const d = isoOrDate ? new Date(isoOrDate) : new Date()
+  if (Number.isNaN(d.getTime())) return nowInBrazil()
+  return {
+    data: new Intl.DateTimeFormat('pt-BR', {
+      timeZone: TZ_BR,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(d),
+    hora: new Intl.DateTimeFormat('pt-BR', {
+      timeZone: TZ_BR,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d),
+    when: new Intl.DateTimeFormat('pt-BR', {
+      timeZone: TZ_BR,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d),
+  }
+}
+
 function normalizeMatricula(raw) {
   return String(raw || '')
     .trim()
@@ -682,7 +731,7 @@ async function maybeSendEmail({ tipo, dados, numero }) {
   }
   const to = env('REPORT_EMAIL') || env('VITE_REPORT_EMAIL') || 'belchiorjuniorrr@gmail.com'
   const from = env('RESEND_FROM') || 'SafeMine <onboarding@resend.dev>'
-  const createdAt = new Date().toISOString()
+  const createdAt = dados?._registered_at || new Date().toISOString()
   const tipoLbl = emailTipoLabel(tipo)
   const subject = `SafeMine · ${tipoLbl} · ${numero || dados?.nome || 'WhatsApp'}`
   const html = buildReportEmailHtml({
@@ -968,14 +1017,19 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
 
   const { tipo, campos } = await classifyAndParse(tr.text)
   const numero = await nextNumero()
-  const now = new Date()
+  const br = nowInBrazil()
+  // Carimbo oficial do registro no fuso de Brasília (servidor Vercel = UTC).
+  // Hora dita no áudio fica na descrição/transcrição; data/hora do formulário = agora BR.
   const dados = {
     ...campos,
     nome: session.nome,
     matricula: session.matricula,
     funcao: session.funcao,
-    data: campos.data || now.toLocaleDateString('pt-BR'),
-    hora: campos.hora || now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    data: br.data,
+    hora: br.hora,
+    _registered_at: br.iso,
+    _registered_data: br.data,
+    _registered_hora: br.hora,
     _transcript: tr.text,
     _canal: 'whatsapp',
     _wa_phone: phone,

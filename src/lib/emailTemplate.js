@@ -114,9 +114,16 @@ function rowsFromDados(dados = {}) {
  */
 export function buildReportEmailHtml({ tipo, dados, userEmail, createdAt }) {
   const tipoLabel = TIPO_LABELS[tipo] || tipo
-  const when = createdAt
-    ? new Date(createdAt).toLocaleString('pt-BR')
-    : new Date().toLocaleString('pt-BR')
+  const when = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(createdAt ? new Date(createdAt) : new Date())
   const rows = rowsFromDados(dados)
 
   return `<!DOCTYPE html>

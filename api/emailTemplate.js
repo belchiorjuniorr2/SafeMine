@@ -151,9 +151,17 @@ export function buildReportEmailHtml({
   canal,
 }) {
   const tipoLabel = TIPO_LABELS[tipo] || tipo
-  const when = createdAt
-    ? new Date(createdAt).toLocaleString('pt-BR')
-    : new Date().toLocaleString('pt-BR')
+  const TZ_BR = 'America/Sao_Paulo'
+  const when = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TZ_BR,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(createdAt ? new Date(createdAt) : new Date())
   const rows = rowsFromDados(dados || {})
   const canalLabel =
     canal === 'whatsapp' || dados?._canal === 'whatsapp'
