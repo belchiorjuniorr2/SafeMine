@@ -131,6 +131,9 @@ $$;
 
 grant execute on function public.wa_find_colaborador(text) to anon, authenticated, service_role;
 
+-- 6b) user_id pode ser null (canal WhatsApp)
+alter table public.registros alter column user_id drop not null;
+
 -- 7) RPC: inserir relato WhatsApp (bypassa RLS de registros)
 create or replace function public.wa_insert_registro(
   p_tipo text,
@@ -146,39 +149,52 @@ set search_path = public
 as $$
 declare
   v_id uuid;
-  v_numero text := coalesce(nullif(p_numero, ''), 'SM-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.relato_numero_seq')::text, 5, '0'));
+  v_user uuid := p_user_id;
+  v_numero text := coalesce(
+    nullif(p_numero, ''),
+    'SM-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.relato_numero_seq')::text, 5, '0')
+  );
+  v_mat text := coalesce(p_dados->>'matricula', '');
 begin
+  if v_user is null and v_mat <> '' then
+    select c.user_id into v_user
+    from public.colaboradores c
+    where upper(trim(c.matricula)) = upper(trim(v_mat))
+      and c.user_id is not null
+    limit 1;
+  end if;
+
+  if v_user is null then
+    begin
+      select id into v_user from auth.users order by created_at asc limit 1;
+    exception when others then
+      v_user := null;
+    end;
+  end if;
+
   insert into public.registros (tipo, dados, user_id, user_email, numero, canal)
-  values (
-    p_tipo,
-    p_dados,
-    p_user_id,
-    p_user_email,
-    v_numero,
-    'whatsapp'
-  )
+  values (p_tipo, p_dados, v_user, p_user_email, v_numero, 'whatsapp')
   returning id into v_id;
 
-  return jsonb_build_object('ok', true, 'id', v_id, 'numero', v_numero);
+  return jsonb_build_object('ok', true, 'id', v_id, 'numero', v_numero, 'user_id', v_user);
 exception
   when undefined_column then
-    -- schema antigo sem numero/canal
     insert into public.registros (tipo, dados, user_id, user_email)
     values (
       p_tipo,
       p_dados || jsonb_build_object('_numero', v_numero, '_canal', 'whatsapp'),
-      p_user_id,
+      v_user,
       p_user_email
     )
     returning id into v_id;
-    return jsonb_build_object('ok', true, 'id', v_id, 'numero', v_numero);
+    return jsonb_build_object('ok', true, 'id', v_id, 'numero', v_numero, 'user_id', v_user);
 end;
 $$;
 
 grant execute on function public.wa_insert_registro(text, jsonb, text, uuid, text) to anon, authenticated, service_role;
 
--- 8) Matrícula de teste
+-- 8) Matrícula cadastrada (não sobrescreve nome/função se já existir)
 insert into public.colaboradores (matricula, nome, funcao)
-values ('50349', 'José Belchior P. Junior', 'Técnico de Segurança')
+values ('50349', 'José Belchior P. Junior', 'Assistente de Tecnologia da Informação')
 on conflict (matricula) do update
-  set nome = excluded.nome, funcao = excluded.funcao, ativo = true;
+  set ativo = true;

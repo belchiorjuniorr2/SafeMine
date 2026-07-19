@@ -10,6 +10,7 @@ import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
 import { getReportType } from '../lib/reportTypes'
+import LocationField from '../components/LocationField'
 
 const turnos = ['Manhã', 'Tarde', 'Noite']
 
@@ -48,7 +49,17 @@ export default function ShiftChange() {
         setError(result.error)
         return
       }
-      navigate('/sucesso', { state: { type: 'turno', data: result.dados, emailSent: result.emailSent, emailTo: result.emailTo, emailError: result.emailError } })
+      navigate('/sucesso', {
+        state: {
+          type: 'turno',
+          data: result.dados,
+          emailSent: result.emailSent,
+          emailTo: result.emailTo,
+          emailError: result.emailError,
+          queued: result.queued,
+          message: result.message,
+        },
+      })
     } catch (err) {
       setError(err?.message || 'Erro inesperado ao enviar a passagem de turno.')
     } finally {
@@ -94,8 +105,7 @@ export default function ShiftChange() {
               <input type="date" value={f.data || ''} onChange={upd('data')} style={inputStyle} />
             </div>
             <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>Frente de Trabalho</label>
-              <input value={f.frente_trabalho || ''} onChange={upd('frente_trabalho')} placeholder="Ex: Frente Norte" style={inputStyle} />
+              <LocationField formTipo="turno" f={f} setF={setF} label="Frente de Trabalho" fieldKey="frente_trabalho" />
             </div>
           </div>
         </div>

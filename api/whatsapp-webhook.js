@@ -18,6 +18,12 @@
  */
 
 import { buildReportEmailHtml, tipoLabel as emailTipoLabel } from './emailTemplate.js'
+import {
+  afterAudioProcessed,
+  transitionConfirmDraft,
+  buildDraftSummaryMessage,
+  WA_STATES,
+} from '../src/lib/waDraftMachine.js'
 
 const ZAPI_BASE = 'https://api.z-api.io'
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
@@ -27,6 +33,7 @@ const STATES = {
   NEED_MATRICULA: 'need_matricula',
   CONFIRM: 'confirm_matricula',
   READY: 'ready',
+  CONFIRM_DRAFT: WA_STATES.CONFIRM_DRAFT,
 }
 
 /** Fallback em memória se o Supabase/tabelas ainda não estiverem prontos (dev / 1ª subida). */
@@ -272,6 +279,9 @@ function looksLikeBotMessage(text) {
     'trocar de matricula',
     'Responda *SIM*',
     'Responda SIM',
+    'Rascunho do relato',
+    'para registrar ou',
+    'descartar',
   ]
   const lower = t.toLowerCase()
   if (markers.some((s) => t.includes(s) || lower.includes(s.toLowerCase()))) return true
@@ -664,13 +674,13 @@ async function nextNumero() {
   return `SM-${y}-${rand}`
 }
 
-async function saveRegistro({ tipo, dados, userId, userEmail, numero }) {
+async function saveRegistro({ tipo, dados, userId, userEmail, numero, canal = 'whatsapp' }) {
   // Prefer RPC security definer (funciona com anon + RLS)
   const rpc = await sbRpc(
     'wa_insert_registro',
     {
       p_tipo: tipo,
-      p_dados: dados,
+      p_dados: { ...dados, _canal: canal },
       p_numero: numero,
       p_user_id: userId || null,
       p_user_email: userEmail || null,
@@ -964,6 +974,32 @@ async function handleIncoming(payload) {
     return { ignored: true, reason: 'confirm_wait_yes_no' }
   }
 
+  // CONFIRM_DRAFT — após áudio: SIM finaliza, NÃO descarta
+  if (session.state === STATES.CONFIRM_DRAFT || session.state === 'confirm_draft') {
+    if (hasAudio) {
+      await zapiSendText(
+        phone,
+        'Você ainda tem um *rascunho* pendente. Responda *SIM* para registrar ou *NÃO* para descartar. Depois pode enviar outro áudio.',
+      )
+      return { ok: true, action: 'draft_pending_audio' }
+    }
+    const tr = transitionConfirmDraft(text, { isYes, isNo })
+    if (tr.action === 'finalize_draft') {
+      if (debounceAction(`${phone}:finalize_draft`)) return { ignored: true, reason: 'debounce' }
+      return finalizeWhatsAppDraft(phone, session)
+    }
+    if (tr.action === 'discard_draft') {
+      if (debounceAction(`${phone}:discard_draft`)) return { ignored: true, reason: 'debounce' }
+      return discardWhatsAppDraft(phone, session)
+    }
+    // repete resumo se houver
+    const summary =
+      session.draft_summary ||
+      'Responda *SIM* para registrar o rascunho ou *NÃO* para descartar.'
+    await zapiSendText(phone, summary)
+    return { ok: true, action: 'draft_repeat' }
+  }
+
   // READY
   if (session.state === STATES.READY) {
     if (hasAudio) {
@@ -1007,6 +1043,12 @@ async function handleMatriculaInput(phone, mat) {
 }
 
 async function handleAudio(phone, session, audioUrl, audioMime) {
+  // Gate: áudio NÃO finaliza registro — cria rascunho e pede SIM
+  const gate = afterAudioProcessed()
+  if (gate.shouldFinalize) {
+    // safety: pure module never finalizes here
+  }
+
   await zapiSendText(phone, MSG.processing)
 
   const tr = await transcribeFromUrl(audioUrl, audioMime)
@@ -1018,8 +1060,6 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
   const { tipo, campos } = await classifyAndParse(tr.text)
   const numero = await nextNumero()
   const br = nowInBrazil()
-  // Carimbo oficial do registro no fuso de Brasília (servidor Vercel = UTC).
-  // Hora dita no áudio fica na descrição/transcrição; data/hora do formulário = agora BR.
   const dados = {
     ...campos,
     nome: session.nome,
@@ -1034,37 +1074,183 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
     _canal: 'whatsapp',
     _wa_phone: phone,
     _numero: numero,
+    _status: 'rascunho',
+    _draft: true,
   }
   if (!dados.descricao_ocorrencia && !dados.descricao && tr.text) {
     dados.descricao_ocorrencia = tr.text
   }
 
+  let saved
   try {
-    await saveRegistro({
+    saved = await saveRegistro({
       tipo,
       dados,
       userId: session.user_id,
       userEmail: null,
       numero,
+      canal: 'whatsapp',
     })
   } catch (e) {
-    console.error('[saveRegistro]', e)
+    console.error('[saveRegistro draft]', e)
     const hint = String(e.message || '').slice(0, 180)
-    await zapiSendText(
-      phone,
-      `${MSG.error}\n\n_Detalhe: ${hint}_`,
-    )
+    await zapiSendText(phone, `${MSG.error}\n\n_Detalhe: ${hint}_`)
     return { ok: false, action: 'save_fail', error: e.message }
   }
 
-  await maybeSendEmail({ tipo, dados, numero })
-
   const local = dados.local || dados.area_inspecionada || dados.frente_trabalho || ''
-  await zapiSendText(
-    phone,
-    MSG.done(numero, TIPO_LABEL[tipo] || tipo, local),
-  )
-  // renova sessão ready
+  const summary = buildDraftSummaryMessage({
+    tipoLabel: TIPO_LABEL[tipo] || tipo,
+    local,
+    gravidade: dados.gravidade || dados.nivel_criticidade || dados.prioridade || '',
+    transcriptPreview: tr.text,
+  })
+
+  const draftId = saved?.row?.id || null
+  await upsertSession(phone, {
+    state: STATES.CONFIRM_DRAFT,
+    nome: session.nome,
+    matricula: session.matricula,
+    funcao: session.funcao,
+    user_id: session.user_id,
+    draft_id: draftId,
+    draft_numero: saved.numero || numero,
+    draft_tipo: tipo,
+    draft_summary: summary,
+  })
+  // memory only fields for draft
+  const mem = memorySessions.get(phone) || {}
+  memorySessions.set(phone, {
+    ...mem,
+    state: STATES.CONFIRM_DRAFT,
+    draft_id: draftId,
+    draft_numero: saved.numero || numero,
+    draft_tipo: tipo,
+    draft_summary: summary,
+    draft_dados: dados,
+  })
+
+  await zapiSendText(phone, summary)
+  return {
+    ok: true,
+    action: 'draft_created',
+    numero: saved.numero || numero,
+    tipo,
+    draft: true,
+    finalized: false,
+  }
+}
+
+async function finalizeWhatsAppDraft(phone, session) {
+  const mem = memorySessions.get(phone) || session
+  const numero = mem.draft_numero || session.draft_numero
+  const tipo = mem.draft_tipo || session.draft_tipo || 'seguranca'
+  const draftId = mem.draft_id || session.draft_id
+  let dados = mem.draft_dados
+
+  if (!numero && !draftId) {
+    await zapiSendText(phone, 'Não há rascunho pendente. Envie um áudio de relato.')
+    await upsertSession(phone, {
+      state: STATES.READY,
+      nome: session.nome,
+      matricula: session.matricula,
+      funcao: session.funcao,
+      user_id: session.user_id,
+    })
+    return { ok: false, action: 'no_draft' }
+  }
+
+  try {
+    // promove rascunho → novo (final)
+    if (draftId) {
+      const rows = await sb(
+        `registros?id=eq.${encodeURIComponent(draftId)}&select=*&limit=1`,
+      )
+      const row = Array.isArray(rows) ? rows[0] : null
+      if (row) {
+        dados = {
+          ...(row.dados || {}),
+          _status: 'novo',
+          _draft: false,
+          _finalized_at: new Date().toISOString(),
+        }
+        await sb(`registros?id=eq.${encodeURIComponent(draftId)}`, {
+          method: 'PATCH',
+          body: { dados },
+          headers: { Prefer: 'return=minimal' },
+        })
+      }
+    } else if (numero) {
+      const rows = await sb(
+        `registros?numero=eq.${encodeURIComponent(numero)}&select=*&limit=1`,
+      )
+      const row = Array.isArray(rows) ? rows[0] : null
+      if (row) {
+        dados = {
+          ...(row.dados || {}),
+          _status: 'novo',
+          _draft: false,
+          _finalized_at: new Date().toISOString(),
+        }
+        await sb(`registros?id=eq.${encodeURIComponent(row.id)}`, {
+          method: 'PATCH',
+          body: { dados },
+          headers: { Prefer: 'return=minimal' },
+        })
+      }
+    }
+
+    if (dados) {
+      await maybeSendEmail({ tipo, dados, numero })
+    }
+
+    const local = dados?.local || dados?.area_inspecionada || ''
+    await zapiSendText(phone, MSG.done(numero, TIPO_LABEL[tipo] || tipo, local))
+
+    memorySessions.set(phone, {
+      ...(memorySessions.get(phone) || {}),
+      state: STATES.READY,
+      draft_id: null,
+      draft_numero: null,
+      draft_dados: null,
+      draft_summary: null,
+    })
+    await upsertSession(phone, {
+      state: STATES.READY,
+      nome: session.nome,
+      matricula: session.matricula,
+      funcao: session.funcao,
+      user_id: session.user_id,
+    })
+    return { ok: true, action: 'registered', numero, tipo, draft: false, finalized: true }
+  } catch (e) {
+    console.error('[finalize draft]', e)
+    await zapiSendText(phone, MSG.error)
+    return { ok: false, action: 'finalize_fail', error: e.message }
+  }
+}
+
+async function discardWhatsAppDraft(phone, session) {
+  const mem = memorySessions.get(phone) || session
+  const draftId = mem.draft_id || session.draft_id
+  const numero = mem.draft_numero || session.draft_numero
+  try {
+    if (draftId) {
+      await sb(`registros?id=eq.${encodeURIComponent(draftId)}`, { method: 'DELETE' })
+    } else if (numero) {
+      await sb(`registros?numero=eq.${encodeURIComponent(numero)}`, { method: 'DELETE' })
+    }
+  } catch (e) {
+    console.warn('[discard draft]', e.message)
+  }
+  memorySessions.set(phone, {
+    ...(memorySessions.get(phone) || {}),
+    state: STATES.READY,
+    draft_id: null,
+    draft_numero: null,
+    draft_dados: null,
+    draft_summary: null,
+  })
   await upsertSession(phone, {
     state: STATES.READY,
     nome: session.nome,
@@ -1072,8 +1258,11 @@ async function handleAudio(phone, session, audioUrl, audioMime) {
     funcao: session.funcao,
     user_id: session.user_id,
   })
-
-  return { ok: true, action: 'registered', numero, tipo }
+  await zapiSendText(
+    phone,
+    'Rascunho *descartado*. Envie um novo áudio quando quiser registrar, ou *sair* para trocar de matrícula.',
+  )
+  return { ok: true, action: 'draft_discarded', finalized: false, discarded: true }
 }
 
 // ─── HTTP handler ──────────────────────────────────────────

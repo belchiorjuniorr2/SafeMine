@@ -10,6 +10,7 @@ import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
 import { getReportType } from '../lib/reportTypes'
+import LocationField from '../components/LocationField'
 
 const tiposInspecao = ['Rotina', 'Especial', 'Auditoria']
 
@@ -49,7 +50,17 @@ export default function SafetyInspection() {
         setError(result.error)
         return
       }
-      navigate('/sucesso', { state: { type: 'inspecao', data: result.dados, emailSent: result.emailSent, emailTo: result.emailTo, emailError: result.emailError } })
+      navigate('/sucesso', {
+        state: {
+          type: 'inspecao',
+          data: result.dados,
+          emailSent: result.emailSent,
+          emailTo: result.emailTo,
+          emailError: result.emailError,
+          queued: result.queued,
+          message: result.message,
+        },
+      })
     } catch (err) {
       setError(err?.message || 'Erro inesperado ao enviar a inspeção.')
     } finally {
@@ -89,8 +100,7 @@ export default function SafetyInspection() {
             </div>
           </div>
           <div style={{ marginBottom: '16px' }}>
-            <label style={labelStyle}>Área Inspecionada</label>
-            <input value={f.area_inspecionada || ''} onChange={upd('area_inspecionada')} placeholder="Ex: Pátio de estocagem" style={inputStyle} />
+            <LocationField formTipo="inspecao" f={f} setF={setF} label="Área Inspecionada" fieldKey="area_inspecionada" />
           </div>
           <div style={{ marginBottom: '16px' }}>
             <label style={labelStyle}>Tipo de Inspeção</label>

@@ -31,7 +31,7 @@ create table if not exists public.colaboradores (
 
 -- Exemplo (ajuste e rode):
 -- insert into public.colaboradores (matricula, nome, funcao)
--- values ('10482', 'José Belchior P. Junior', 'Técnico de Segurança')
+-- values ('50349', 'José Belchior P. Junior', 'Técnico de Segurança')
 -- on conflict (matricula) do update
 --   set nome = excluded.nome, funcao = excluded.funcao, ativo = true;
 

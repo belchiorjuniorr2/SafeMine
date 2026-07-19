@@ -58,7 +58,17 @@ export default function VehicleChecklist() {
         setError(result.error)
         return
       }
-      navigate('/sucesso', { state: { type: 'veiculo', data: result.dados, emailSent: result.emailSent, emailTo: result.emailTo, emailError: result.emailError } })
+      navigate('/sucesso', {
+        state: {
+          type: 'veiculo',
+          data: result.dados,
+          emailSent: result.emailSent,
+          emailTo: result.emailTo,
+          emailError: result.emailError,
+          queued: result.queued,
+          message: result.message,
+        },
+      })
     } catch (err) {
       setError(err?.message || 'Erro inesperado ao enviar o checklist.')
     } finally {

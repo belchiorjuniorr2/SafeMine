@@ -10,6 +10,7 @@ import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
 import { getReportType } from '../lib/reportTypes'
+import LocationField from '../components/LocationField'
 
 const gravidades = ['Leve', 'Moderado', 'Grave']
 
@@ -60,7 +61,17 @@ export default function SafetyReport() {
         setError(result.error)
         return
       }
-      navigate('/sucesso', { state: { type: 'seguranca', data: result.dados, emailSent: result.emailSent, emailTo: result.emailTo, emailError: result.emailError } })
+      navigate('/sucesso', {
+        state: {
+          type: 'seguranca',
+          data: result.dados,
+          emailSent: result.emailSent,
+          emailTo: result.emailTo,
+          emailError: result.emailError,
+          queued: result.queued,
+          message: result.message,
+        },
+      })
     } catch (err) {
       setError(err?.message || 'Erro inesperado ao enviar o registro.')
     } finally {
@@ -99,7 +110,7 @@ export default function SafetyReport() {
             </div>
           </div>
 
-          {field('Local', 'local', f, setF, { placeholder: 'Ex: Frente de lavra Norte' })}
+          <LocationField formTipo="seguranca" f={f} setF={setF} label="Local" />
           {field('Descrição da Ocorrência', 'descricao_ocorrencia', f, setF, { textarea: true, placeholder: 'Descreva o que aconteceu...' })}
           {field('Causa Raiz', 'causa_raiz', f, setF, { textarea: true, placeholder: 'Identifique a causa...' })}
           {field('Ação Imediata', 'acao_imediata', f, setF, { textarea: true, placeholder: 'Medidas tomadas imediatamente...' })}

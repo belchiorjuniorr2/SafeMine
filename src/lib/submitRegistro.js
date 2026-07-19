@@ -1,12 +1,11 @@
 import { supabase } from './supabase'
 import { sendReportEmail, getReportEmailTo } from './sendReportEmail'
+import { createOfflineQueue, createIdbStorage, createMemoryStorage } from './offlineQueue'
 
 /**
- * Upload anexos e grava um registro no Supabase.
- * Em seguida envia e-mail com template HTML para o destinatário de notificações.
- * Retorna { ok: true, dados, emailSent, emailError? } ou { ok: false, error }.
+ * Upload anexos e grava um registro no Supabase (caminho online).
  */
-export async function submitRegistro({ tipo, dados, files = [], user }) {
+export async function submitRegistroOnline({ tipo, dados, files = [], user }) {
   if (!user?.id) {
     return { ok: false, error: 'Sessão expirada. Faça login novamente.' }
   }
@@ -27,9 +26,9 @@ export async function submitRegistro({ tipo, dados, files = [], user }) {
       }
     }
 
-    const { data: { publicUrl } } = supabase.storage
-      .from('relatos-anexos')
-      .getPublicUrl(path)
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from('relatos-anexos').getPublicUrl(path)
 
     anexos.push({ url: publicUrl, name: file.name, type: file.type })
   }
@@ -37,14 +36,30 @@ export async function submitRegistro({ tipo, dados, files = [], user }) {
   const payload = {
     ...dados,
     ...(anexos.length ? { anexos } : {}),
+    _status: dados._status || 'novo',
   }
 
-  const { error: insertError } = await supabase.from('registros').insert({
+  const insertBody = {
     tipo,
     dados: payload,
     user_id: user.id,
     user_email: user.email,
-  })
+    canal: dados._canal || 'app',
+  }
+  if (dados._numero) insertBody.numero = dados._numero
+
+  let { error: insertError } = await supabase.from('registros').insert(insertBody)
+
+  // fallback se colunas canal/numero não existirem
+  if (insertError && /canal|numero/i.test(insertError.message || '')) {
+    const retry = await supabase.from('registros').insert({
+      tipo,
+      dados: payload,
+      user_id: user.id,
+      user_email: user.email,
+    })
+    insertError = retry.error
+  }
 
   if (insertError) {
     return {
@@ -53,7 +68,6 @@ export async function submitRegistro({ tipo, dados, files = [], user }) {
     }
   }
 
-  // E-mail de notificação (não bloqueia o sucesso do registro se falhar)
   const createdAt = new Date().toISOString()
   const emailResult = await sendReportEmail({
     tipo,
@@ -72,5 +86,67 @@ export async function submitRegistro({ tipo, dados, files = [], user }) {
     emailSent: !!emailResult.ok,
     emailTo: getReportEmailTo(),
     emailError: emailResult.ok ? undefined : emailResult.error,
+    queued: false,
+  }
+}
+
+let queue = null
+
+function getQueue() {
+  if (!queue) {
+    const storage =
+      typeof indexedDB !== 'undefined' ? createIdbStorage() : createMemoryStorage()
+    queue = createOfflineQueue({
+      storage,
+      isOnline: () => typeof navigator === 'undefined' || navigator.onLine !== false,
+      submitFn: submitRegistroOnline,
+    })
+  }
+  return queue
+}
+
+/**
+ * Envia online ou enfileira offline. Drena fila ao voltar a rede.
+ */
+export async function submitRegistro(args) {
+  const q = getQueue()
+  const result = await q.submitOrQueue(args)
+  if (result.queued) {
+    return {
+      ok: true,
+      queued: true,
+      queueId: result.queueId,
+      dados: args.dados,
+      message: result.message,
+      emailSent: false,
+    }
+  }
+  return result
+}
+
+/** Drain pending offline reports (call on online / app mount). */
+export async function drainOfflineQueue() {
+  return getQueue().drain()
+}
+
+export async function listOfflineQueue() {
+  return getQueue().list()
+}
+
+/** Hook browser online listener once */
+let onlineHooked = false
+export function hookOfflineQueueDrain() {
+  if (typeof window === 'undefined' || onlineHooked) return
+  onlineHooked = true
+  window.addEventListener('online', () => {
+    drainOfflineQueue().then((r) => {
+      if (r?.drained > 0) {
+        console.info('[SafeMine] fila offline enviada:', r.drained)
+      }
+    })
+  })
+  // try drain on load if online
+  if (navigator.onLine) {
+    drainOfflineQueue().catch(() => {})
   }
 }

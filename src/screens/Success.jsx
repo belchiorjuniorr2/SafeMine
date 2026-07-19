@@ -10,6 +10,8 @@ export default function Success() {
   const emailSent = state?.emailSent
   const emailTo = state?.emailTo
   const emailError = state?.emailError
+  const queued = state?.queued
+  const queueMessage = state?.message
   const now = new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
     day: '2-digit',
@@ -77,10 +79,13 @@ export default function Success() {
         </div>
 
         <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-dark)', marginBottom: '8px' }}>
-          Enviado com sucesso!
+          {queued ? 'Salvo offline!' : 'Enviado com sucesso!'}
         </div>
         <div style={{ fontSize: '14px', color: 'var(--gray)', lineHeight: 1.5, marginBottom: '8px' }}>
-          {label} registrado e enviado para análise.
+          {queued
+            ? queueMessage ||
+              `${label} ficou na fila e será enviado automaticamente quando a rede voltar.`
+            : `${label} registrado e enviado para análise.`}
         </div>
         <div
           style={{

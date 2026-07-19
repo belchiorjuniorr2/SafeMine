@@ -20,7 +20,7 @@ Depois cadastre ao menos um colaborador:
 
 ```sql
 insert into public.colaboradores (matricula, nome, funcao)
-values ('10482', 'José Belchior P. Junior', 'Técnico de Segurança')
+values ('50349', 'José Belchior P. Junior', 'Técnico de Segurança')
 on conflict (matricula) do update
   set nome = excluded.nome, funcao = excluded.funcao, ativo = true;
 ```
@@ -46,7 +46,7 @@ ZAPI_TOKEN=...
 ZAPI_CLIENT_TOKEN=   # se o painel Z-API mostrar "Account security token"
 OPENROUTER_API_KEY=  # mesma do app
 WHATSAPP_WEBHOOK_SECRET=safemine_wa_mvp
-WHATSAPP_DEMO_COLABORADORES=10482:Nome:Função   # fallback sem SQL
+WHATSAPP_DEMO_COLABORADORES=50349:Nome:Função   # fallback sem SQL
 ```
 
 ### 4. Webhook na Z-API

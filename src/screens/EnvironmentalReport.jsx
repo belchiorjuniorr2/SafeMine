@@ -10,6 +10,7 @@ import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
 import { getReportType } from '../lib/reportTypes'
+import LocationField from '../components/LocationField'
 
 const niveis = ['Baixo', 'Médio', 'Alto']
 const nivColor = n => n === 'Alto' ? '#e53935' : n === 'Médio' ? '#f57c00' : '#43a047'
@@ -50,7 +51,17 @@ export default function EnvironmentalReport() {
         setError(result.error)
         return
       }
-      navigate('/sucesso', { state: { type: 'ambiental', data: result.dados, emailSent: result.emailSent, emailTo: result.emailTo, emailError: result.emailError } })
+      navigate('/sucesso', {
+        state: {
+          type: 'ambiental',
+          data: result.dados,
+          emailSent: result.emailSent,
+          emailTo: result.emailTo,
+          emailError: result.emailError,
+          queued: result.queued,
+          message: result.message,
+        },
+      })
     } catch (err) {
       setError(err?.message || 'Erro inesperado ao enviar o registro.')
     } finally {
@@ -91,8 +102,10 @@ export default function EnvironmentalReport() {
             </div>
           </div>
 
-          {[['Local', 'local', 'Ex: Bacia de contenção Sul'],
-            ['Tipo de Impacto', 'tipo_impacto', 'Ex: Derramamento de óleo'],
+          <div style={{ marginBottom: '16px' }}>
+            <LocationField formTipo="ambiental" f={f} setF={setF} label="Local" />
+          </div>
+          {[['Tipo de Impacto', 'tipo_impacto', 'Ex: Derramamento de óleo'],
             ['Área Afetada', 'area_afetada', 'Ex: 50m²']].map(([label, key, ph]) => (
             <div key={key} style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>{label}</label>

@@ -348,6 +348,7 @@ export async function processVoiceRelato({
   canal = 'radio',
   identity = {},
   meta = {},
+  draftGate = null,
 }) {
   let tr
   if (audioBuffer) {
@@ -358,6 +359,23 @@ export async function processVoiceRelato({
     return { ok: false, error: 'audioUrl ou audioBase64 é obrigatório' }
   }
   if (tr.error) return { ok: false, error: tr.error, stage: 'stt' }
+
+  // Radio quality gate (injectable pure result)
+  let isDraft = false
+  let draftReason = ''
+  if (draftGate && typeof draftGate === 'object') {
+    isDraft = !!draftGate.draft
+    draftReason = draftGate.reason || ''
+  } else if (canal === 'radio') {
+    try {
+      const { shouldDraftRadio } = await import('../src/lib/radioDraftGate.js')
+      const g = shouldDraftRadio(tr.text, meta)
+      isDraft = g.draft
+      draftReason = g.reason
+    } catch (e) {
+      console.warn('[draftGate]', e.message)
+    }
+  }
 
   const { tipo, campos } = await classifyAndParse(tr.text)
   const numero = await nextNumero()
@@ -376,6 +394,9 @@ export async function processVoiceRelato({
     _transcript: tr.text,
     _canal: canal,
     _numero: numero,
+    ...(isDraft
+      ? { _status: 'rascunho', _draft: true, _draft_reason: draftReason }
+      : { _status: 'novo', _draft: false }),
     ...Object.fromEntries(
       Object.entries(meta).map(([k, v]) => [`_${k}`.replace(/^__/, '_'), v]),
     ),
@@ -393,13 +414,19 @@ export async function processVoiceRelato({
     canal,
   })
 
-  const email = await sendReportEmail({ tipo, dados, numero: saved.numero, canal })
+  // E-mail SSMA só para relatos finais (não rascunho de rádio duvidoso)
+  let email = { ok: false, error: 'skipped_draft' }
+  if (!isDraft) {
+    email = await sendReportEmail({ tipo, dados, numero: saved.numero, canal })
+  }
 
   return {
     ok: true,
     numero: saved.numero,
     tipo,
     transcript: tr.text,
+    draft: isDraft,
+    draftReason,
     emailSent: !!email.ok,
     emailError: email.ok ? undefined : email.error,
     dados,

@@ -307,6 +307,11 @@ export default async function handler(req, res) {
       identity.nome = speakerName
     }
 
+    const forceDraft = body.forceDraft === true || body.force_draft === true
+    const forceFinal = body.forceFinal === true || body.force_final === true
+    const confidence =
+      typeof body.confidence === 'number' ? body.confidence : undefined
+
     const result = await processVoiceRelato({
       audioUrl: audioBuffer ? undefined : audioUrl,
       audioBuffer,
@@ -321,7 +326,15 @@ export default async function handler(req, res) {
         external_id: externalId || '',
         recorded_at: body.recordedAt || body.recorded_at || '',
         source: 'radio_digital',
+        forceDraft,
+        forceFinal,
+        confidence,
       },
+      draftGate: forceDraft
+        ? { draft: true, reason: 'force_draft' }
+        : forceFinal
+          ? { draft: false, reason: 'force_final' }
+          : null, // auto gate on transcript inside pipeline
     })
 
     if (!result.ok) {
@@ -345,7 +358,12 @@ export default async function handler(req, res) {
       radioId,
       numero: result.numero,
       ok: true,
-      payload: { tipo: result.tipo, radioId },
+      payload: {
+        tipo: result.tipo,
+        radioId,
+        draft: !!result.draft,
+        draftReason: result.draftReason || null,
+      },
     })
 
     json(res, 200, {
@@ -353,6 +371,9 @@ export default async function handler(req, res) {
       numero: result.numero,
       tipo: result.tipo,
       transcript: result.transcript,
+      draft: !!result.draft,
+      draftReason: result.draftReason || null,
+      status: result.draft ? 'rascunho' : 'novo',
       emailSent: result.emailSent,
       emailError: result.emailError,
       identity: {
@@ -361,6 +382,9 @@ export default async function handler(req, res) {
         funcao: identity.funcao,
       },
       warn: auth.warn,
+      message: result.draft
+        ? 'Áudio curto/duvidoso gravado como RASCUNHO (não notifica SSMA até revisão).'
+        : 'Relato final registrado e SSMA notificada.',
     })
   } catch (err) {
     console.error('[radio-ingest]', err)
