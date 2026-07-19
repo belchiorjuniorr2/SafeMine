@@ -31,6 +31,13 @@ const STATES = {
 
 /** Fallback em memória se o Supabase/tabelas ainda não estiverem prontos (dev / 1ª subida). */
 const memorySessions = new Map()
+/** Anti-loop: messageIds já processados + janela após envio do bot. */
+const seenMessageIds = new Map() // id -> ts
+const lastBotSendAt = new Map() // phone -> ts
+const lastUserReplyAt = new Map() // phone+action -> ts
+const SEEN_TTL_MS = 10 * 60 * 1000
+const BOT_COOLDOWN_MS = 4000
+const REPLY_DEBOUNCE_MS = 2500
 
 // ─── helpers ───────────────────────────────────────────────
 
@@ -73,7 +80,8 @@ function isYes(text) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-  return ['sim', 's', 'yes', 'y', 'confirmo', 'ok', 'pode', 'isso', 'certo'].includes(t)
+  // sem "ok" — conflita com eco do bot ("Ok. Digite sua matrícula")
+  return ['sim', 's', 'yes', 'y', 'confirmo', 'pode', 'isso', 'certo', 'confirmar'].includes(t)
 }
 
 function isNo(text) {
@@ -188,24 +196,85 @@ async function sbRpc(fn, args = {}, { throwOnError = false } = {}) {
 function looksLikeBotMessage(text) {
   const t = String(text || '').trim()
   if (!t) return false
-  const starts = [
-    'Olá! Sou o *SafeMine*',
-    'Olá! Sou o SafeMine',
+  const markers = [
+    'Sou o *SafeMine*',
+    'Sou o SafeMine',
+    'SafeMine',
     'Confirme seus dados',
-    '✅ Matrícula confirmada',
-    '✅ Relato *',
-    '✅ Relato ',
-    '⏳ Recebi o áudio',
+    'Matrícula confirmada',
+    'Matricula confirmada',
+    'Recebi o áudio',
+    'Recebi o audio',
+    'registrado no SafeMine',
     'Não encontrei a matrícula',
+    'Nao encontrei a matricula',
     'Não consegui entender o áudio',
     'Ocorreu um erro ao processar',
     'Sessão encerrada',
-    'Agora envie o *áudio',
-    'Antes de enviar o áudio',
-    'Ok. Digite sua',
+    'Sessao encerrada',
+    'áudio do relato',
+    'audio do relato',
+    'Digite sua *matrícula*',
+    'Digite sua matrícula',
+    'Digite sua matricula',
     'Ainda preciso da confirmação',
+    'A SSMA foi notificada',
+    'trocar de matrícula',
+    'trocar de matricula',
+    'Responda *SIM*',
+    'Responda SIM',
   ]
-  return starts.some((s) => t.startsWith(s) || t.includes('Sou o *SafeMine*'))
+  const lower = t.toLowerCase()
+  if (markers.some((s) => t.includes(s) || lower.includes(s.toLowerCase()))) return true
+  // mensagens longas com formatação de bot (várias linhas + emojis de UI)
+  if (t.length > 60 && (t.includes('👤') || t.includes('🔢') || t.includes('📋') || t.includes('🧰'))) {
+    return true
+  }
+  return false
+}
+
+/** No modo fromMe, só aceita comandos curtos do usuário ou áudio — evita reprocessar eco. */
+function isLikelyUserInput(text, hasAudio) {
+  if (hasAudio) return true
+  const t = String(text || '').trim()
+  if (!t) return false
+  if (looksLikeBotMessage(t)) return false
+  if (t.length > 48) return false
+  if (isYes(t) || isNo(t) || isLogout(t)) return true
+  const mat = normalizeMatricula(t)
+  if (/^[A-Z0-9\-]{2,20}$/.test(mat) && !isYes(t) && !isNo(t)) return true
+  if (/^(oi|olá|ola|hey|menu|inicio|início|help|ajuda|bom dia|boa tarde|boa noite)$/i.test(t)) {
+    return true
+  }
+  return false
+}
+
+function pruneSeen() {
+  const now = Date.now()
+  for (const [id, ts] of seenMessageIds) {
+    if (now - ts > SEEN_TTL_MS) seenMessageIds.delete(id)
+  }
+}
+
+function markSeen(messageId) {
+  if (!messageId) return false
+  pruneSeen()
+  if (seenMessageIds.has(messageId)) return true
+  seenMessageIds.set(messageId, Date.now())
+  return false
+}
+
+function inBotCooldown(phone) {
+  const ts = lastBotSendAt.get(phone) || 0
+  return Date.now() - ts < BOT_COOLDOWN_MS
+}
+
+function debounceAction(key) {
+  const now = Date.now()
+  const prev = lastUserReplyAt.get(key) || 0
+  if (now - prev < REPLY_DEBOUNCE_MS) return true
+  lastUserReplyAt.set(key, now)
+  return false
 }
 
 // ─── Z-API ─────────────────────────────────────────────────
@@ -213,6 +282,11 @@ function looksLikeBotMessage(text) {
 async function zapiSendText(phone, message) {
   const { instanceId, token, clientToken } = zapiConfig()
   if (!instanceId || !token) throw new Error('ZAPI_INSTANCE_ID / ZAPI_TOKEN não configurados')
+
+  const p = normalizePhone(phone) || phone
+  // marca cooldown ANTES do envio para cobrir eco quase imediato
+  lastBotSendAt.set(p, Date.now())
+  if (phone !== p) lastBotSendAt.set(phone, Date.now())
 
   const headers = { 'Content-Type': 'application/json' }
   if (clientToken) headers['Client-Token'] = clientToken
@@ -223,7 +297,7 @@ async function zapiSendText(phone, message) {
       method: 'POST',
       headers,
       body: JSON.stringify({
-        phone: normalizePhone(phone),
+        phone: p,
         message,
       }),
     },
@@ -233,6 +307,11 @@ async function zapiSendText(phone, message) {
     console.error('[zapi send-text]', r.status, data)
     throw new Error(data?.message || data?.error || `Z-API ${r.status}`)
   }
+  // marca messageId de saída se a Z-API devolver
+  if (data?.messageId || data?.zaapId || data?.id) {
+    markSeen(String(data.messageId || data.zaapId || data.id))
+  }
+  lastBotSendAt.set(p, Date.now())
   return data
 }
 
@@ -679,12 +758,19 @@ async function handleIncoming(payload) {
   const allowExternal = env('WHATSAPP_ALLOW_EXTERNAL', 'false') === 'true'
 
   if (payload.isGroup) return { ignored: true, reason: 'group' }
+  if (payload.waitingMessage) return { ignored: true, reason: 'waiting' }
+  if (payload.notification) return { ignored: true, reason: 'notification' }
   if (payload.type && payload.type !== 'ReceivedCallback') {
     return { ignored: true, reason: 'type' }
   }
 
   // Mensagens enviadas pela API (send-text) — não reprocessar
   if (payload.fromApi) return { ignored: true, reason: 'fromApi' }
+
+  // dedup por messageId (Z-API às vezes reenvia)
+  if (payload.messageId && markSeen(payload.messageId)) {
+    return { ignored: true, reason: 'dup_messageId' }
+  }
 
   const isFromMe = !!payload.fromMe
   if (isFromMe && !allowFromMe) {
@@ -709,20 +795,36 @@ async function handleIncoming(payload) {
   // payload.phone em fromMe pode ser LID (@lid) ou o contato do chat.
   let phone = normalizePhone(payload.connectedPhone) || normalizePhone(env('ZAPI_SELF_PHONE'))
   if (!phone) {
-    // só usa phone do payload se parecer E.164 BR (10–13 dígitos começando com 55)
+    // só usa phone do payload se parecer E.164 BR (10–13 dígitos)
     const raw = normalizePhone(payload.phone)
     if (raw && raw.length >= 10 && raw.length <= 13) phone = raw
   }
   if (!phone) phone = 'self'
 
+  // cooldown logo após o bot falar — engole eco
+  if (inBotCooldown(phone)) {
+    return { ignored: true, reason: 'bot_cooldown' }
+  }
+
   const hasAudio = !!(payload.audio?.audioUrl)
   const audioUrl = payload.audio?.audioUrl
   const audioMime = payload.audio?.mimeType
+
+  // sem texto e sem áudio = status/reação/etc.
+  if (!hasAudio && !String(text || '').trim()) {
+    return { ignored: true, reason: 'empty' }
+  }
+
+  // modo fromMe: só comandos curtos do usuário ou áudio
+  if (isFromMe && !isLikelyUserInput(text, hasAudio)) {
+    return { ignored: true, reason: 'not_user_input' }
+  }
 
   let session = await getSession(phone)
 
   // logout
   if (text && isLogout(text)) {
+    if (debounceAction(`${phone}:logout`)) return { ignored: true, reason: 'debounce' }
     await clearSession(phone)
     await zapiSendText(phone, MSG.bye)
     return { ok: true, action: 'logout' }
@@ -731,8 +833,9 @@ async function handleIncoming(payload) {
   // sem sessão
   if (!session) {
     if (hasAudio) {
-      await zapiSendText(phone, MSG.needMatFirst)
+      if (debounceAction(`${phone}:need_mat_audio`)) return { ignored: true, reason: 'debounce' }
       await upsertSession(phone, { state: STATES.NEED_MATRICULA })
+      await zapiSendText(phone, MSG.needMatFirst)
       return { ok: true, action: 'need_mat_before_audio' }
     }
     // se parece matrícula
@@ -740,6 +843,7 @@ async function handleIncoming(payload) {
     if (maybeMat && /^[A-Z0-9\-]{2,20}$/.test(maybeMat) && !isYes(text) && !isNo(text)) {
       return handleMatriculaInput(phone, maybeMat)
     }
+    if (debounceAction(`${phone}:welcome`)) return { ignored: true, reason: 'debounce' }
     await upsertSession(phone, { state: STATES.NEED_MATRICULA })
     await zapiSendText(phone, MSG.welcome)
     return { ok: true, action: 'welcome' }
@@ -748,11 +852,13 @@ async function handleIncoming(payload) {
   // ── estados ──
   if (session.state === STATES.NEED_MATRICULA) {
     if (hasAudio) {
+      if (debounceAction(`${phone}:need_mat`)) return { ignored: true, reason: 'debounce' }
       await zapiSendText(phone, MSG.needMatFirst)
       return { ok: true, action: 'need_mat' }
     }
     const mat = normalizeMatricula(text)
-    if (!mat) {
+    if (!mat || isYes(text) || isNo(text)) {
+      if (debounceAction(`${phone}:ask_mat`)) return { ignored: true, reason: 'debounce' }
       await zapiSendText(phone, MSG.welcome)
       return { ok: true, action: 'ask_mat' }
     }
@@ -761,6 +867,7 @@ async function handleIncoming(payload) {
 
   if (session.state === STATES.CONFIRM) {
     if (hasAudio) {
+      if (debounceAction(`${phone}:confirm_audio`)) return { ignored: true, reason: 'debounce' }
       await zapiSendText(
         phone,
         `Ainda preciso da confirmação.\n\n${MSG.confirm({
@@ -772,6 +879,7 @@ async function handleIncoming(payload) {
       return { ok: true, action: 'confirm_pending' }
     }
     if (isYes(text)) {
+      if (debounceAction(`${phone}:confirm_yes`)) return { ignored: true, reason: 'debounce' }
       await upsertSession(phone, {
         state: STATES.READY,
         matricula: session.pending_matricula || session.matricula,
@@ -791,6 +899,7 @@ async function handleIncoming(payload) {
       return { ok: true, action: 'confirmed' }
     }
     if (isNo(text)) {
+      if (debounceAction(`${phone}:confirm_no`)) return { ignored: true, reason: 'debounce' }
       await upsertSession(phone, {
         state: STATES.NEED_MATRICULA,
         pending_matricula: null,
@@ -799,18 +908,11 @@ async function handleIncoming(payload) {
         funcao: null,
         user_id: null,
       })
-      await zapiSendText(phone, 'Ok. Digite sua *matrícula*:')
+      await zapiSendText(phone, 'Digite sua *matrícula*:')
       return { ok: true, action: 'confirm_no' }
     }
-    await zapiSendText(
-      phone,
-      MSG.confirm({
-        nome: session.nome,
-        matricula: session.pending_matricula || session.matricula,
-        funcao: session.funcao,
-      }),
-    )
-    return { ok: true, action: 'confirm_repeat' }
+    // não reenviar confirmação em loop para lixo/eco
+    return { ignored: true, reason: 'confirm_wait_yes_no' }
   }
 
   // READY
@@ -824,13 +926,16 @@ async function handleIncoming(payload) {
       if (/^\d{3,10}$/.test(mat)) {
         return handleMatriculaInput(phone, mat)
       }
+      // não spammar "envie o áudio" a cada mensagem
+      if (debounceAction(`${phone}:need_audio`)) return { ignored: true, reason: 'debounce' }
       await zapiSendText(phone, MSG.needAudio)
       return { ok: true, action: 'need_audio' }
     }
+    return { ignored: true, reason: 'ready_empty' }
   }
 
-  await zapiSendText(phone, MSG.welcome)
-  return { ok: true, action: 'fallback' }
+  // estado desconhecido — não loop de welcome
+  return { ignored: true, reason: 'unknown_state' }
 }
 
 async function handleMatriculaInput(phone, mat) {
