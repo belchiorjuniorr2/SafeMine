@@ -82,11 +82,11 @@ Integração via **Z-API** + webhook Vercel (`/api/whatsapp-webhook`).
 2. Bot pede a **matrícula**.  
 3. Sistema busca em `colaboradores` (ou fallback de env).  
 4. Mostra nome/função e pede confirmação **SIM** / **NÃO**.  
-5. Só após **SIM** aceita **áudio** de relato.  
+5. Só após **SIM** (identidade) aceita **áudio** de relato.  
 6. IA transcreve e classifica o tipo (segurança, ambiental, etc.).  
-7. Grava em `registros` com `canal = whatsapp` e número `SM-AAAA-#####`.  
-8. Responde no WhatsApp com o número do relato.  
-9. Envia e-mail HTML (mesmo template visual do app) para a SSMA.
+7. Grava **rascunho** e envia resumo; pede **SIM** para registrar ou **NÃO** para descartar.  
+8. Só no **SIM** do rascunho o relato vira final (`_status: novo`) e a SSMA recebe e-mail.  
+9. Responde no WhatsApp com o número `SM-AAAA-#####`.
 
 **Comandos:**
 
