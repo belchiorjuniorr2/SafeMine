@@ -23,10 +23,12 @@ import {
   Inbox,
   Filter,
   ChevronRight,
+  Eye,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
 import Gauge from '../components/Gauge'
+import ReportDrawer from '../components/ReportDrawer'
 import { REPORT_TYPES } from '../lib/reportTypes'
 import {
   buildAnalytics,
@@ -87,6 +89,7 @@ export default function Gestao() {
   const [filterCanal, setFilterCanal] = useState('todos')
   const [filterStatus, setFilterStatus] = useState('todos')
   const [updatingId, setUpdatingId] = useState(null)
+  const [selected, setSelected] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -556,18 +559,19 @@ export default function Gestao() {
                   <th>Local</th>
                   <th>Grav.</th>
                   <th>Status</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="gestao-table-empty">
+                    <td colSpan={7} className="gestao-table-empty">
                       Carregando…
                     </td>
                   </tr>
                 ) : reportRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="gestao-table-empty">
+                    <td colSpan={7} className="gestao-table-empty">
                       Nenhum registro no filtro
                     </td>
                   </tr>
@@ -578,7 +582,11 @@ export default function Gestao() {
                     const num = r.numero || r.dados?._numero || '—'
                     const tipo = TIPO_LABELS[r.tipo] || r.tipo
                     return (
-                      <tr key={r.id}>
+                      <tr
+                        key={r.id}
+                        className="gestao-table__row-click"
+                        onClick={() => setSelected(r)}
+                      >
                         <td>
                           <div className="gestao-td-main">{num}</div>
                           <div className="gestao-td-sub">{fmtDate(r.created_at)}</div>
@@ -599,7 +607,7 @@ export default function Gestao() {
                             '—'
                           )}
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <select
                             className="gestao-select gestao-select--sm"
                             value={st.key}
@@ -613,6 +621,16 @@ export default function Gestao() {
                               </option>
                             ))}
                           </select>
+                        </td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="gestao-btn gestao-btn--ghost gestao-btn--icon"
+                            onClick={() => setSelected(r)}
+                            aria-label="Abrir relato"
+                          >
+                            <Eye size={15} />
+                          </button>
                         </td>
                       </tr>
                     )
@@ -634,7 +652,11 @@ export default function Gestao() {
                 const g = getGravidade(r)
                 const num = r.numero || r.dados?._numero || '—'
                 return (
-                  <article key={r.id} className="gestao-report-card">
+                  <article
+                    key={r.id}
+                    className="gestao-report-card gestao-report-card--click"
+                    onClick={() => setSelected(r)}
+                  >
                     <div className="gestao-report-card__top">
                       <strong>{num}</strong>
                       <span className={`gestao-chip gestao-chip--${getCanal(r)}`}>
@@ -647,21 +669,30 @@ export default function Gestao() {
                     </p>
                     <p className="gestao-report-card__local">{getLocal(r)}</p>
                     <p className="gestao-td-sub">{fmtDate(r.created_at)}</p>
-                    <label className="gestao-report-card__status">
-                      <span>Status</span>
-                      <select
-                        className="gestao-select gestao-select--sm"
-                        value={st.key}
-                        disabled={updatingId === r.id}
-                        onChange={(e) => updateStatus(r, e.target.value)}
+                    <div className="gestao-report-card__foot" onClick={(e) => e.stopPropagation()}>
+                      <label className="gestao-report-card__status">
+                        <span>Status</span>
+                        <select
+                          className="gestao-select gestao-select--sm"
+                          value={st.key}
+                          disabled={updatingId === r.id}
+                          onChange={(e) => updateStatus(r, e.target.value)}
+                        >
+                          {STATUS_LIST.map((s) => (
+                            <option key={s.key} value={s.key}>
+                              {s.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="gestao-btn gestao-btn--primary gestao-btn--sm"
+                        onClick={() => setSelected(r)}
                       >
-                        {STATUS_LIST.map((s) => (
-                          <option key={s.key} value={s.key}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        <Eye size={14} /> Abrir
+                      </button>
+                    </div>
                   </article>
                 )
               })
@@ -669,6 +700,17 @@ export default function Gestao() {
           </div>
         </section>
       </main>
+
+      {selected ? (
+        <ReportDrawer
+          record={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={(next) => {
+            setSelected(next)
+            setRecords((prev) => prev.map((r) => (r.id === next.id ? next : r)))
+          }}
+        />
+      ) : null}
     </div>
   )
 }
