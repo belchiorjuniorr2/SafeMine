@@ -9,6 +9,7 @@ import SubmitError from '../components/SubmitError'
 import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
+import { getReportType } from '../lib/reportTypes'
 
 const turnos = ['Manhã', 'Tarde', 'Noite']
 
@@ -70,7 +71,7 @@ export default function ShiftChange() {
 
   return (
     <div className="app-shell">
-      <Header title="Passagem de Turno" subtitle="Troca de Turno" icon="/icons/turno.png" />
+      <Header title="Passagem de Turno" subtitle="Troca de Turno" typeVisual={getReportType('turno')} />
       <div className="app-main app-main--form">
         <div className="panel">
           <div className="panel__title">Preencher por voz</div>

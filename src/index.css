@@ -371,9 +371,39 @@ a { color: inherit; }
   transition: transform 0.25s ease;
 }
 
-.dash-card:hover .dash-card__icon {
+.dash-card__type-icon {
+  animation: iconFloat 4s ease-in-out infinite;
+  transition: transform 0.25s ease;
+}
+
+.dash-card:hover .dash-card__icon,
+.dash-card:hover .dash-card__type-icon {
   transform: scale(1.07);
   animation-play-state: paused;
+}
+
+/* Ícones de tipo (Lucide em tile colorido) */
+.type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.type-icon svg {
+  display: block;
+}
+
+.page-header__img-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 0;
+  object-fit: contain;
+  object-position: center;
+  flex-shrink: 0;
+  background: transparent;
+  filter: drop-shadow(0 2px 8px rgba(255, 154, 92, 0.28));
 }
 
 .dash-card__body {

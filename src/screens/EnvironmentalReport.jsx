@@ -9,6 +9,7 @@ import SubmitError from '../components/SubmitError'
 import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
+import { getReportType } from '../lib/reportTypes'
 
 const niveis = ['Baixo', 'Médio', 'Alto']
 const nivColor = n => n === 'Alto' ? '#e53935' : n === 'Médio' ? '#f57c00' : '#43a047'
@@ -61,7 +62,7 @@ export default function EnvironmentalReport() {
 
   return (
     <div className="app-shell">
-      <Header title="Registro Ambiental" subtitle="Impacto Ambiental" icon="/icons/ambiental.png" />
+      <Header title="Registro Ambiental" subtitle="Impacto Ambiental" typeVisual={getReportType('ambiental')} />
       <div className="app-main app-main--form">
         <div className="panel">
           <div className="panel__title">Preencher por voz</div>

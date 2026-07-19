@@ -1,7 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
+import TypeIcon from './TypeIcon'
 
-export default function Header({ title, subtitle, icon }) {
+/**
+ * @param {string} [icon] - path de imagem (logo etc.)
+ * @param {object} [typeVisual] - { Icon, color, colorSoft, gradient, shadow } de reportTypes
+ */
+export default function Header({ title, subtitle, icon, typeVisual }) {
   const navigate = useNavigate()
   return (
     <header className="app-header">
@@ -15,24 +20,24 @@ export default function Header({ title, subtitle, icon }) {
         >
           <ChevronLeft size={22} />
         </button>
-        {icon && (
+        {typeVisual?.Icon ? (
+          <TypeIcon
+            Icon={typeVisual.Icon}
+            color={typeVisual.color}
+            colorSoft={typeVisual.colorSoft}
+            gradient={typeVisual.gradient}
+            shadow={typeVisual.shadow}
+            size={36}
+          />
+        ) : icon ? (
           <img
             src={icon}
             alt=""
             width={36}
             height={36}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 0,
-              objectFit: 'contain',
-              objectPosition: 'center',
-              flexShrink: 0,
-              background: 'transparent',
-              filter: 'drop-shadow(0 2px 8px rgba(255,154,92,0.28))',
-            }}
+            className="page-header__img-icon"
           />
-        )}
+        ) : null}
         <div className="page-header__text">
           <div className="page-header__title">{title}</div>
           {subtitle && <div className="page-header__sub">{subtitle}</div>}

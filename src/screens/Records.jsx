@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import Header from '../components/Header'
+import { REGISTROS_VISUAL } from '../lib/reportTypes'
 
 const tipos = {
   seguranca: { label: 'Segurança', color: '#e53935', soft: '#FDECEA', Icon: ShieldAlert },
@@ -298,7 +299,7 @@ export default function Records() {
             ? 'Carregando…'
             : `${records.length} registro${records.length !== 1 ? 's' : ''} no sistema`
         }
-        icon="/icons/registros.png"
+        typeVisual={REGISTROS_VISUAL}
       />
 
       <div className="rec-toolbar">

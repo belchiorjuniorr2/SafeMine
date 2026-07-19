@@ -9,6 +9,7 @@ import SubmitError from '../components/SubmitError'
 import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
+import { getReportType } from '../lib/reportTypes'
 
 const prioridades = ['Baixa', 'Média', 'Alta']
 const priColor = p => p === 'Alta' ? '#e53935' : p === 'Média' ? '#f57c00' : '#43a047'
@@ -60,7 +61,7 @@ export default function ErgonomicReport() {
 
   return (
     <div className="app-shell">
-      <Header title="Registro Ergonômico" subtitle="Risco Ergonômico" icon="/icons/ergonomia.png" />
+      <Header title="Registro Ergonômico" subtitle="Risco Ergonômico" typeVisual={getReportType('ergonomia')} />
       <div className="app-main app-main--form">
         <div className="panel">
           <div className="panel__title">Preencher por voz</div>

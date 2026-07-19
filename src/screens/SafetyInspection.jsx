@@ -9,6 +9,7 @@ import SubmitError from '../components/SubmitError'
 import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
+import { getReportType } from '../lib/reportTypes'
 
 const tiposInspecao = ['Rotina', 'Especial', 'Auditoria']
 
@@ -60,7 +61,7 @@ export default function SafetyInspection() {
 
   return (
     <div className="app-shell">
-      <Header title="Inspeção de Segurança" subtitle="Inspeção de Campo" icon="/icons/inspecao.png" />
+      <Header title="Inspeção de Segurança" subtitle="Inspeção de Campo" typeVisual={getReportType('inspecao')} />
       <div className="app-main app-main--form">
         <div className="panel">
           <div className="panel__title">Preencher por voz</div>

@@ -9,6 +9,7 @@ import SubmitError from '../components/SubmitError'
 import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
+import { getReportType } from '../lib/reportTypes'
 
 const checklistItems = [
   { key: 'pneus', label: 'Pneus' },
@@ -70,7 +71,7 @@ export default function VehicleChecklist() {
 
   return (
     <div className="app-shell">
-      <Header title="Checklist de Veículo" subtitle="Inspeção Diária" icon="/icons/veiculo.png" />
+      <Header title="Checklist de Veículo" subtitle="Inspeção Diária" typeVisual={getReportType('veiculo')} />
       <div className="app-main app-main--form">
         <div className="panel">
           <div className="panel__title">Preencher por voz</div>

@@ -9,6 +9,7 @@ import SubmitError from '../components/SubmitError'
 import { submitRegistro } from '../lib/submitRegistro'
 import { mergeAiIntoForm, withoutIdentity } from '../lib/identity'
 import { useAuth } from '../context/AuthContext'
+import { getReportType } from '../lib/reportTypes'
 
 const gravidades = ['Leve', 'Moderado', 'Grave']
 
@@ -69,7 +70,7 @@ export default function SafetyReport() {
 
   return (
     <div className="app-shell">
-      <Header title="Registro de Segurança" subtitle="Ocorrência de Segurança" icon="/icons/seguranca.png" />
+      <Header title="Registro de Segurança" subtitle="Ocorrência de Segurança" typeVisual={getReportType('seguranca')} />
       <div className="app-main app-main--form">
         <div className="panel">
           <div className="panel__title">Preencher por voz</div>

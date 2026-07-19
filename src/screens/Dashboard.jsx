@@ -3,51 +3,8 @@ import { LogOut, ChevronRight, UserCircle, Mic } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../context/ProfileContext'
 import QuickVoiceCapture from '../components/QuickVoiceCapture'
-
-const cards = [
-  {
-    key: 'seguranca',
-    label: 'Segurança',
-    sub: 'Registro de ocorrências',
-    path: '/seguranca',
-    icon: '/icons/seguranca.png',
-  },
-  {
-    key: 'ambiental',
-    label: 'Ambiental',
-    sub: 'Impacto ambiental',
-    path: '/ambiental',
-    icon: '/icons/ambiental.png',
-  },
-  {
-    key: 'ergonomia',
-    label: 'Ergonomia',
-    sub: 'Risco ergonômico',
-    path: '/ergonomia',
-    icon: '/icons/ergonomia.png',
-  },
-  {
-    key: 'veiculo',
-    label: 'Veículo',
-    sub: 'Checklist diário',
-    path: '/veiculo',
-    icon: '/icons/veiculo.png',
-  },
-  {
-    key: 'turno',
-    label: 'Passagem de Turno',
-    sub: 'Troca de turno',
-    path: '/turno',
-    icon: '/icons/turno.png',
-  },
-  {
-    key: 'inspecao',
-    label: 'Inspeção',
-    sub: 'Inspeção de segurança',
-    path: '/inspecao',
-    icon: '/icons/inspecao.png',
-  },
-]
+import TypeIcon from '../components/TypeIcon'
+import { REPORT_TYPE_LIST, REGISTROS_VISUAL } from '../lib/reportTypes'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -129,29 +86,35 @@ export default function Dashboard() {
         <h1 className="section-title">O que deseja registrar?</h1>
 
         <div className="card-grid" role="list">
-          {cards.map(({ key, label, sub, path, icon }) => (
+          {REPORT_TYPE_LIST.map((t) => (
             <button
-              key={path}
+              key={t.path}
               type="button"
-              className={`dash-card dash-card--${key}`}
-              onClick={() => navigate(path)}
+              className={`dash-card dash-card--${t.key}`}
+              onClick={() => navigate(t.path)}
               role="listitem"
-              aria-label={`${label}: ${sub}`}
+              aria-label={`${t.label}: ${t.sub}`}
+              style={{
+                '--card-color': t.color,
+                '--card-glow': `${t.color}28`,
+                '--card-shadow': t.shadow,
+              }}
             >
               <span className="dash-card__bar" aria-hidden />
               <div className="dash-card__icon-wrap">
-                <img
-                  src={icon}
-                  alt=""
-                  className="dash-card__icon"
-                  width={56}
-                  height={56}
-                  loading="lazy"
+                <TypeIcon
+                  Icon={t.Icon}
+                  color={t.color}
+                  colorSoft={t.colorSoft}
+                  gradient={t.gradient}
+                  shadow={t.shadow}
+                  size="lg"
+                  className="dash-card__type-icon"
                 />
               </div>
               <div className="dash-card__body">
-                <div className="dash-card__label">{label}</div>
-                <div className="dash-card__sub">{sub}</div>
+                <div className="dash-card__label">{t.label}</div>
+                <div className="dash-card__sub">{t.sub}</div>
               </div>
             </button>
           ))}
@@ -163,16 +126,17 @@ export default function Dashboard() {
           onClick={() => navigate('/registros')}
           aria-label="Consultar registros enviados"
         >
-          <img
-            src="/icons/registros.png"
-            alt=""
-            className="list-cta__icon"
-            width={48}
-            height={48}
+          <TypeIcon
+            Icon={REGISTROS_VISUAL.Icon}
+            color={REGISTROS_VISUAL.color}
+            colorSoft={REGISTROS_VISUAL.colorSoft}
+            gradient={REGISTROS_VISUAL.gradient}
+            shadow={REGISTROS_VISUAL.shadow}
+            size={48}
           />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="list-cta__title">Consultar Registros</div>
-            <div className="list-cta__sub">Visualize todos os registros enviados</div>
+            <div className="list-cta__title">{REGISTROS_VISUAL.label}</div>
+            <div className="list-cta__sub">{REGISTROS_VISUAL.sub}</div>
           </div>
           <ChevronRight size={18} color="var(--gray)" aria-hidden />
         </button>
