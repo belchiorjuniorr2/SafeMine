@@ -12,6 +12,9 @@
  *  OPENROUTER_API_KEY (ou VITE_OPENROUTER_API_KEY)
  *  RESEND_API_KEY, REPORT_EMAIL (opcional — e-mail SSMA)
  *  WHATSAPP_WEBHOOK_SECRET (opcional — ?secret=)
+ *  WHATSAPP_ALLOW_FROM_ME=true (default) — aceita msgs do número da instância
+ *  WHATSAPP_ALLOW_EXTERNAL=false (default) — bloqueia números externos
+ *  ZAPI_SELF_PHONE (opcional) — se connectedPhone não vier no webhook
  */
 
 const ZAPI_BASE = 'https://api.z-api.io'
@@ -570,14 +573,41 @@ const TIPO_LABEL = {
 // ─── core flow ─────────────────────────────────────────────
 
 async function handleIncoming(payload) {
-  // ignora eco da própria API / grupos
-  if (payload.fromMe || payload.fromApi) return { ignored: true, reason: 'fromMe' }
+  // MVP: por enquanto só aceita mensagens fromMe (número da própria instância).
+  // Assim você testa mandando áudio/texto do chip conectado na Z-API.
+  // Quando liberar para operadores, setar WHATSAPP_ALLOW_FROM_ME=false e
+  // WHATSAPP_ALLOW_EXTERNAL=true (ou remover o gate).
+  const allowFromMe = env('WHATSAPP_ALLOW_FROM_ME', 'true') !== 'false'
+  const allowExternal = env('WHATSAPP_ALLOW_EXTERNAL', 'false') === 'true'
+
   if (payload.isGroup) return { ignored: true, reason: 'group' }
   if (payload.type && payload.type !== 'ReceivedCallback') {
     return { ignored: true, reason: 'type' }
   }
+
+  // Mensagens enviadas pela API (send-text) — não reprocessar como se fossem do usuário
+  if (payload.fromApi) return { ignored: true, reason: 'fromApi' }
+
+  const isFromMe = !!payload.fromMe
+  if (isFromMe && !allowFromMe) {
+    return { ignored: true, reason: 'fromMe_disabled' }
+  }
+  if (!isFromMe && !allowExternal) {
+    return { ignored: true, reason: 'external_disabled' }
+  }
+
   // só texto e áudio
-  const phone = normalizePhone(payload.phone)
+  // fromMe: phone no webhook é o contato do chat; para o MVP de teste
+  // tratamos o dono da instância (connectedPhone) como o "operador" e
+  // respondemos nele — assim você usa só o chip da Z-API.
+  let phone = normalizePhone(payload.phone)
+  if (isFromMe) {
+    const selfPhone =
+      normalizePhone(payload.connectedPhone) ||
+      normalizePhone(env('ZAPI_SELF_PHONE')) ||
+      phone
+    phone = selfPhone || 'self'
+  }
   if (!phone) return { ignored: true, reason: 'no_phone' }
 
   const text =
